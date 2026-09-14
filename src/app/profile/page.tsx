@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/Input";
 import { createClient } from "@/utils/supabase/client";
 import { User } from "@supabase/supabase-js";
 
-// 1. สร้าง Interface กำหนดชนิดข้อมูลให้ SelectField แทนการใช้ any
 interface SelectFieldProps {
   label: string;
   value: string;
@@ -16,7 +15,6 @@ interface SelectFieldProps {
   required?: boolean;
 }
 
-// นำ Interface มาใช้คุม Props
 const SelectField = ({
   label,
   value,
@@ -46,6 +44,41 @@ const SelectField = ({
   </div>
 );
 
+// 1. สร้างโครงสร้างข้อมูลจับคู่ คณะ -> สาขา
+const FACULTY_MAJOR_MAP: Record<string, string[]> = {
+  คณะเกษตรศาสตร์และทรัพยากรธรรมชาติ: [
+    "เทคโนโลยีการผลิตพืช",
+    "สัตวศาสตร์",
+    "วิศวกรรมเครื่องกล - เครื่องจักรกลเกษตร",
+    "เทคโนโลยีเพาะเลี้ยงสัตว์น้ำและการจัดการ",
+    "เทคโนโลยีการจัดการอุตสาหกรรมเพื่อความยั่งยืน",
+  ],
+  คณะมนุษยศาสตร์และสังคมศาสตร์: [
+    "การจัดการ",
+    "เทคโนโลยีการลงทุน",
+    "การตลาดสมัยใหม่",
+    "ภาษาอังกฤษเพื่อการสื่อสารสากล",
+    "บัญชีบัณฑิต",
+    "เทคโนโลยีการจัดการโลจิสติกส์และซัพพลายเชน – เทคโนโลยีการจัดการคลังสินค้าและศูนย์กระจายสินค้าดิจิทัล",
+    "เทคโนโลยีการจัดการโลจิสติกส์และซัพพลายเชน - การค้าระหว่างประเทศและเทคโนโลยีการจัดการขนส่งดิจิทัล",
+  ],
+  คณะวิทยาศาสตร์และเทคโนโลยี: [
+    "วิทยาศาสตร์และเทคโนโลยีการอาหาร",
+    "เทคโนโลยีการประกอบอาหารและการบริการ",
+    "นวัตกรรมผลิตภัณฑ์ชีวภาพ",
+    "วิทยาการคอมพิวเตอร์",
+    "การจัดการสิ่งแวดล้อมและความปลอดภัย",
+    "เทคโนโลยีสารสนเทศและการสื่อสาร",
+    "ผลิตภัณฑ์เพื่อสุขภาพและความงาม",
+  ],
+  คณะสัตวแพทยศาสตร์: ["สัตวแพทย์ศาสตร์", "วิทยาศาสตร์สุขภาพสัตว์"],
+  สำนักวิชาวิศวกรรมศาสตร์และนวัตกรรม: [
+    "วิศวกรรมเมคคาทรอนิกส์และหุ่นยนต์",
+    "วิศวกรรมอุตสาหการและโลจิสติกส์",
+    "วิศวกรรมเครื่องกล",
+  ],
+};
+
 export default function ProfilePage() {
   const router = useRouter();
   const supabase = createClient();
@@ -71,24 +104,20 @@ export default function ProfilePage() {
   const [message, setMessage] = useState({ type: "", text: "" });
 
   const titleOptions = ["นาย", "นางสาว", "นาง"];
-  const facultyOptions = [
-    "วิทยาศาสตร์และเทคโนโลยี",
-    "เกษตรศาสตร์และทรัพยากรธรรมชาติ",
-    "มนุษยศาสตร์และสังคมศาสตร์",
-    "บริหารธุรกิจและเทคโนโลยีสารสนเทศ",
-    "ศิลปศาสตร์",
-    "สถาปัตยกรรมศาสตร์และการออกแบบ",
+  const yearOptions = [
+    "ปี 1",
+    "ปี 2",
+    "ปี 3",
+    "ปี 4",
+    "ปี 3 เทียบโอน",
+    "ปี 4 เทียบโอน",
   ];
-  const majorOptions = [
-    "เทคโนโลยีสารสนเทศและการสื่อสาร (ICT)",
-    "วิทยาการคอมพิวเตอร์ (CS)",
-    "วิทยาศาสตร์และเทคโนโลยีการอาหาร",
-    "เทคโนโลยีการเกษตร",
-    "การจัดการ",
-    "ภาษาอังกฤษ",
-    "อื่นๆ",
-  ];
-  const yearOptions = ["ปี 1", "ปี 2", "ปี 3", "ปี 4", "ปี 5", "อื่นๆ"];
+
+  // 2. ดึงชื่อคณะทั้งหมดออกมาเป็นตัวเลือก
+  const facultyOptions = Object.keys(FACULTY_MAJOR_MAP);
+
+  // 3. คำนวณตัวเลือกสาขาตามคณะที่เลือกอยู่ ณ ปัจจุบัน
+  const majorOptions = faculty ? FACULTY_MAJOR_MAP[faculty] : [];
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -278,7 +307,6 @@ export default function ProfilePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-1">
-                  {/* 2. เปลี่ยนชนิดของ e ให้เป็น React.ChangeEvent<HTMLSelectElement> */}
                   <SelectField
                     label="คำนำหน้า"
                     options={titleOptions}
@@ -344,14 +372,16 @@ export default function ProfilePage() {
                   label="คณะ"
                   options={facultyOptions}
                   value={faculty}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                    setFaculty(e.target.value)
-                  }
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                    // 4. เมื่อเปลี่ยนคณะ ให้ล้างค่าสาขาวิชาเดิมทิ้งทันที
+                    setFaculty(e.target.value);
+                    setMajor("");
+                  }}
                   required
                 />
                 <SelectField
                   label="สาขาวิชา"
-                  options={majorOptions}
+                  options={majorOptions} // 5. แสดงเฉพาะสาขาของคณะนั้นๆ
                   value={major}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                     setMajor(e.target.value)

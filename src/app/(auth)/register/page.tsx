@@ -5,16 +5,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { createClient } from "@/utils/supabase/client"; // นำเข้า Supabase Client
+import { createClient } from "@/utils/supabase/client";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const supabase = createClient(); // เรียกใช้งาน Supabase
+  const supabase = createClient();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [role, setRole] = useState("Learner"); // ค่าเริ่มต้นเป็นผู้เรียน
+
+  // ข้อมูลส่วนตัวเพิ่มเติม
+  const [title, setTitle] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [lineId, setLineId] = useState("");
+
+  const [role, setRole] = useState("Learner");
 
   const [errorMsg, setErrorMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,9 +31,13 @@ export default function RegisterPage() {
     e.preventDefault();
     setErrorMsg("");
 
-    // 1. ตรวจสอบเงื่อนไขฝั่งหน้าบ้าน
     if (!email.endsWith("@rmutto.ac.th")) {
       setErrorMsg("กรุณาใช้อีเมลของมหาวิทยาลัย (@rmutto.ac.th) เท่านั้นครับ");
+      return;
+    }
+
+    if (!title) {
+      setErrorMsg("กรุณาเลือกคำนำหน้าชื่อครับ");
       return;
     }
 
@@ -41,23 +53,25 @@ export default function RegisterPage() {
 
     setIsLoading(true);
 
-    // 2. ส่งข้อมูลไปสมัครสมาชิกที่ Supabase
+    // ส่งข้อมูลทั้งหมดไปสมัครสมาชิกพร้อมกับ Metadata
     const { data, error } = await supabase.auth.signUp({
       email: email,
       password: password,
       options: {
         data: {
-          role: role, // บันทึก Role ลงใน Metadata ของ Auth ทันที
+          role: role,
+          title: title,
+          first_name: firstName,
+          last_name: lastName,
+          phone: phone,
+          line_id: lineId,
         },
       },
     });
 
     setIsLoading(false);
 
-    // 3. จัดการกรณีเกิด Error จาก Supabase
     if (error) {
-      console.error("Signup error:", error.message);
-      // แปลงข้อความ Error ให้เข้าใจง่ายขึ้น
       if (error.message.includes("User already registered")) {
         setErrorMsg("อีเมลนี้มีผู้ใช้งานแล้วครับ");
       } else {
@@ -66,7 +80,6 @@ export default function RegisterPage() {
       return;
     }
 
-    // 4. สำเร็จ! แจ้งเตือนและพาไปหน้าเข้าสู่ระบบ
     if (data.user) {
       alert("สมัครสมาชิกสำเร็จ! โปรดเข้าสู่ระบบเพื่อเริ่มใช้งาน");
       router.push("/login");
@@ -75,7 +88,7 @@ export default function RegisterPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-blue-50/50 p-4 py-12">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 space-y-6 border border-gray-100">
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl p-8 space-y-6 border border-gray-100">
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-bold text-gray-800">สมัครสมาชิก</h1>
           <p className="text-gray-500 text-sm">
@@ -84,7 +97,6 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        {/* แสดงข้อความแจ้งเตือนเมื่อเกิด Error */}
         {errorMsg && (
           <div className="bg-red-50 text-red-500 text-sm p-3 rounded-lg border border-red-100 text-center">
             {errorMsg}
@@ -101,25 +113,91 @@ export default function RegisterPage() {
             required
           />
 
-          <Input
-            label="รหัสผ่าน"
-            type="password"
-            placeholder="ตั้งรหัสผ่าน (อย่างน้อย 6 ตัวอักษร)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          {/* แถวที่ 1: คำนำหน้า, ชื่อจริง, นามสกุล */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="md:col-span-1 space-y-1">
+              <label className="text-sm font-semibold text-gray-700 block">
+                คำนำหน้า <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-gray-700 bg-white"
+              >
+                <option value="" disabled>
+                  เลือก
+                </option>
+                <option value="นาย">นาย</option>
+                <option value="นางสาว">นางสาว</option>
+                <option value="นาง">นาง</option>
+              </select>
+            </div>
+            <div className="md:col-span-1 flex items-end">
+              <div className="w-full">
+                <Input
+                  label="ชื่อจริง"
+                  type="text"
+                  placeholder="ชื่อของคุณ"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div className="md:col-span-2 flex items-end">
+              <div className="w-full">
+                <Input
+                  label="นามสกุล"
+                  type="text"
+                  placeholder="นามสกุลของคุณ"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+          </div>
 
-          <Input
-            label="ยืนยันรหัสผ่าน"
-            type="password"
-            placeholder="กรอกรหัสผ่านอีกครั้ง"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
+          {/* แถวที่ 2: เบอร์โทรศัพท์, Line ID */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="เบอร์โทรศัพท์"
+              type="tel"
+              placeholder="08X-XXX-XXXX"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              required
+            />
+            <Input
+              label="Line ID (ใส่หรือไม่ใส่ก็ได้)"
+              type="text"
+              placeholder="ไอดีไลน์ของคุณ"
+              value={lineId}
+              onChange={(e) => setLineId(e.target.value)}
+            />
+          </div>
 
-          {/* ส่วนเลือก Role (ผู้เรียน / ผู้สอน) */}
+          {/* แถวที่ 3: รหัสผ่าน, ยืนยันรหัสผ่าน */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="รหัสผ่าน"
+              type="password"
+              placeholder="อย่างน้อย 6 ตัวอักษร"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <Input
+              label="ยืนยันรหัสผ่าน"
+              type="password"
+              placeholder="กรอกอีกครั้ง"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+            />
+          </div>
+
           <div className="space-y-2 pb-2">
             <label className="text-sm font-semibold text-gray-700 block">
               คุณต้องการใช้งานในฐานะอะไร?
