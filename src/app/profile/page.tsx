@@ -135,7 +135,8 @@ export default function ProfilePage() {
       const { data } = await supabase
         .from("users")
         .select(
-          "title, first_name, last_name, nickname, phone, avatar_url, line_id, faculty, major, year, bio",
+          // อัปเดตจาก avatar_url เป็น profile_image_url
+          "title, first_name, last_name, nickname, phone, profile_image_url, line_id, faculty, major, year, bio",
         )
         .eq("id", session.user.id)
         .single();
@@ -146,7 +147,8 @@ export default function ProfilePage() {
         setLastName(data.last_name || "");
         setNickname(data.nickname || "");
         setPhone(data.phone || "");
-        setAvatarUrl(data.avatar_url || null);
+        // อัปเดตจาก avatar_url เป็น profile_image_url
+        setAvatarUrl(data.profile_image_url || null);
         setLineId(data.line_id || "");
         setFaculty(data.faculty || "");
         setMajor(data.major || "");
@@ -211,7 +213,8 @@ export default function ProfilePage() {
         last_name: lastName,
         nickname: nickname,
         phone: phone,
-        avatar_url: avatarUrl,
+        // อัปเดตจาก avatar_url เป็น profile_image_url
+        profile_image_url: avatarUrl,
         line_id: lineId,
         faculty: faculty,
         major: major,
@@ -373,7 +376,6 @@ export default function ProfilePage() {
                   options={facultyOptions}
                   value={faculty}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                    // 4. เมื่อเปลี่ยนคณะ ให้ล้างค่าสาขาวิชาเดิมทิ้งทันที
                     setFaculty(e.target.value);
                     setMajor("");
                   }}
@@ -381,7 +383,7 @@ export default function ProfilePage() {
                 />
                 <SelectField
                   label="สาขาวิชา"
-                  options={majorOptions} // 5. แสดงเฉพาะสาขาของคณะนั้นๆ
+                  options={majorOptions}
                   value={major}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                     setMajor(e.target.value)
