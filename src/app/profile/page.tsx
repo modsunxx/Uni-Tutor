@@ -235,9 +235,13 @@ export default function ProfilePage() {
 
       setMessage({
         type: "success",
-        text: "บันทึกข้อมูลโปรไฟล์เรียบร้อยแล้ว!",
+        text: "บันทึกข้อมูลโปรไฟล์เรียบร้อยแล้ว! กำลังรีเฟรชหน้า...",
       });
-      router.refresh();
+
+      // บังคับรีโหลดหน้าเว็บเพื่อให้อัปเดตรูปใน Navbar
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
     } catch (err) {
       const error = err as Error;
       setMessage({

@@ -14,19 +14,60 @@ export function Navbar() {
 
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false); // State ควบคุม Dropdown
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
-  // อ้างอิงถึงตัว Dropdown เพื่อทำระบบคลิกที่อื่นแล้วปิด
+  // 1. เพิ่ม State สำหรับเก็บชื่อที่จะแสดง (Display Name)
+  const [displayName, setDisplayName] = useState<string>("ผู้ใช้");
+
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // 2. เปลี่ยนชื่อฟังก์ชันและให้มันดึง nickname, first_name มาด้วย
+    const fetchUserData = async (
+      userId: string,
+      defaultEmail: string | undefined,
+      meta: { first_name?: string },
+    ) => {
+      const { data } = await supabase
+        .from("users")
+        .select("profile_image_url, nickname, first_name")
+        .eq("id", userId)
+        .single();
+
+      if (data) {
+        if (data.profile_image_url) setProfileImage(data.profile_image_url);
+
+        // ลำดับความสำคัญการแสดงชื่อ: ชื่อเล่น -> ชื่อจริง(ในตาราง) -> ชื่อจริง(ตอนสมัคร) -> อีเมลส่วนหน้า
+        const nameToShow =
+          data.nickname ||
+          data.first_name ||
+          meta?.first_name ||
+          defaultEmail?.split("@")[0] ||
+          "ผู้ใช้";
+        setDisplayName(nameToShow);
+      } else {
+        // กรณีดึงตารางไม่สำเร็จ ให้ใช้ชื่อจากตอนสมัคร หรืออีเมลแทน
+        setDisplayName(
+          meta?.first_name || defaultEmail?.split("@")[0] || "ผู้ใช้",
+        );
+      }
+    };
+
     const fetchUser = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
       if (session?.user) {
         setUser(session.user);
         setRole(session.user.user_metadata?.role || "Learner");
+        // ส่งข้อมูลเบื้องต้นไปให้ฟังก์ชันช่วยประมวลผล
+        fetchUserData(
+          session.user.id,
+          session.user.email,
+          session.user.user_metadata,
+        );
       }
     };
     fetchUser();
@@ -36,14 +77,20 @@ export function Navbar() {
         if (session?.user) {
           setUser(session.user);
           setRole(session.user.user_metadata?.role || "Learner");
+          fetchUserData(
+            session.user.id,
+            session.user.email,
+            session.user.user_metadata,
+          );
         } else {
           setUser(null);
           setRole(null);
+          setProfileImage(null);
+          setDisplayName("ผู้ใช้");
         }
       },
     );
 
-    // ฟังก์ชันปิด Dropdown เมื่อคลิกพื้นที่อื่นบนหน้าจอ
     const handleClickOutside = (event: MouseEvent) => {
       if (
         dropdownRef.current &&
@@ -60,7 +107,6 @@ export function Navbar() {
     };
   }, [supabase]);
 
-  // ซ่อน Navbar ในหน้า Login และ Register
   /* eslint-disable @next/next/no-img-element */
   if (pathname === "/login" || pathname === "/register") {
     return null;
@@ -70,7 +116,6 @@ export function Navbar() {
     setIsDropdownOpen(false);
     await supabase.auth.signOut();
 
-    // เคลียร์คุกกี้ที่ทำจำลองไว้ให้เกลี้ยง
     document.cookie =
       "uni_tutor_session=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
 
@@ -104,31 +149,36 @@ export function Navbar() {
         </nav>
 
         {user ? (
-          // ส่วนเมนูผู้ใช้ (Dropdown)
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               className="flex items-center gap-2 hover:bg-gray-50 p-1 pr-3 rounded-full transition-colors border border-transparent hover:border-gray-200"
             >
-              {/* รูปโปรไฟล์ชั่วคราว (เดี๋ยวไปเชื่อมกับ Storage ทีหลัง) */}
               <img
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`}
+                src={
+                  profileImage ||
+                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`
+                }
                 alt="Profile"
-                className="w-9 h-9 rounded-full bg-blue-100 border border-gray-200"
+                className="w-9 h-9 rounded-full bg-blue-100 border border-gray-200 object-cover"
               />
+              {/* 3. เปลี่ยนจาก user.email มาโชว์ displayName แทน */}
               <span className="text-sm font-medium text-gray-700 hidden sm:block max-w-30 truncate">
-                {user.email?.split("@")[0] ?? "ผู้ใช้"}
+                {displayName}
               </span>
             </button>
 
-            {/* กล่อง Dropdown */}
             {isDropdownOpen && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden flex flex-col z-50">
                 <div className="px-4 py-3 border-b border-gray-50 bg-gray-50/50">
+                  {/* แสดงชื่อเล่นตรงหัวข้อตัวใหญ่ และโชว์อีเมลตัวเล็กๆ ด้านล่างแทน */}
                   <p className="text-sm font-bold text-gray-800 truncate">
+                    {displayName}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate mt-0.5">
                     {user.email}
                   </p>
-                  <p className="text-xs text-primary font-medium mt-0.5">
+                  <p className="text-xs text-primary font-medium mt-1">
                     สถานะ: {role}
                   </p>
                 </div>
