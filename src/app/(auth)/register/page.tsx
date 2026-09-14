@@ -130,7 +130,6 @@ export default function RegisterPage() {
                 </option>
                 <option value="นาย">นาย</option>
                 <option value="นางสาว">นางสาว</option>
-                <option value="นาง">นาง</option>
               </select>
             </div>
             <div className="md:col-span-1 flex items-end">
