@@ -132,28 +132,34 @@ export default function ProfilePage() {
 
       setUser(session.user);
 
-      const { data } = await supabase
+      // ดึงข้อมูลสำรองจาก Metadata ที่เราส่งไปตอนกดสมัครสมาชิก
+      const meta = session.user.user_metadata;
+
+      const { data, error } = await supabase
         .from("users")
         .select(
-          // อัปเดตจาก avatar_url เป็น profile_image_url
           "title, first_name, last_name, nickname, phone, profile_image_url, line_id, faculty, major, year, bio",
         )
         .eq("id", session.user.id)
         .single();
 
-      if (data) {
-        setTitle(data.title || "");
-        setFirstName(data.first_name || "");
-        setLastName(data.last_name || "");
-        setNickname(data.nickname || "");
-        setPhone(data.phone || "");
-        // อัปเดตจาก avatar_url เป็น profile_image_url
-        setAvatarUrl(data.profile_image_url || null);
-        setLineId(data.line_id || "");
-        setFaculty(data.faculty || "");
-        setMajor(data.major || "");
-        setYear(data.year || "");
-        setBio(data.bio || "");
+      if (error) {
+        console.warn("ไม่สามารถดึงข้อมูลจากตาราง users ได้:", error.message);
+      }
+
+      // ผสมข้อมูล: ใช้ข้อมูลจากตาราง (data) เป็นหลัก ถ้าไม่มีให้ไปดึงจาก (meta) แทน
+      if (data || meta) {
+        setTitle(data?.title || meta?.title || "");
+        setFirstName(data?.first_name || meta?.first_name || "");
+        setLastName(data?.last_name || meta?.last_name || "");
+        setNickname(data?.nickname || "");
+        setPhone(data?.phone || meta?.phone || "");
+        setAvatarUrl(data?.profile_image_url || null);
+        setLineId(data?.line_id || meta?.line_id || "");
+        setFaculty(data?.faculty || "");
+        setMajor(data?.major || "");
+        setYear(data?.year || "");
+        setBio(data?.bio || "");
       }
     };
 
@@ -208,19 +214,19 @@ export default function ProfilePage() {
 
       const updates = {
         id: user?.id,
+        email: user?.email, // เพิ่มบรรทัดนี้: ดึงอีเมลจาก Auth มาเซฟ
+        role: user?.user_metadata?.role || "Learner", // เพิ่มบรรทัดนี้: ดึง Role จากตอนสมัครมาเซฟ
         title: title,
         first_name: firstName,
         last_name: lastName,
         nickname: nickname,
         phone: phone,
-        // อัปเดตจาก avatar_url เป็น profile_image_url
         profile_image_url: avatarUrl,
         line_id: lineId,
         faculty: faculty,
         major: major,
         year: year,
         bio: bio,
-        updated_at: new Date().toISOString(),
       };
 
       const { error } = await supabase.from("users").upsert(updates);
