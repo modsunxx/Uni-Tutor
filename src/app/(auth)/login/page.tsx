@@ -2,10 +2,12 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // เพิ่มบรรทัดนี้
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
 export default function LoginPage() {
+  const router = useRouter(); // เรียกใช้งาน router
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emailError, setEmailError] = useState(""); // เพิ่ม State สำหรับเก็บข้อความ Error
@@ -28,8 +30,19 @@ export default function LoginPage() {
     // 2. จำลองการส่งข้อมูลไปให้ Supabase (ของจริงจะใส่โค้ดเชื่อม API ตรงนี้)
     setTimeout(() => {
       console.log("Logging in with:", { email, password });
+
+      // --- ส่วนที่เพิ่มเข้ามาใหม่สำหรับการทำ Workflow จำลอง ---
+      // สร้าง Cookie จำลองสถานะล็อกอิน (หมดอายุใน 1 วัน)
+      document.cookie = "uni_tutor_session=true; path=/; max-age=86400";
+
       setIsLoading(false);
-      // alert('เข้าสู่ระบบสำเร็จ!');
+
+      // สั่งเปลี่ยนหน้าไปที่หน้าแรก
+      router.push("/");
+
+      // การใช้ router.refresh() ช่วยให้ Middleware ของ Next.js อัปเดตสถานะทันที
+      router.refresh();
+      // ----------------------------------------------------
     }, 1000);
   };
 
