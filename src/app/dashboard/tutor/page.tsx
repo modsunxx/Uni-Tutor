@@ -97,14 +97,12 @@ export default function TutorDashboardPage() {
             if (tutorProfile.is_verified) {
               setIsTutor(true);
 
-              // อัปเดตสถิติรีวิวจากฐานข้อมูลจริง
               setStats((prev) => ({
                 ...prev,
                 rating: tutorProfile.rating || 0,
                 reviewCount: tutorProfile.review_count || 0,
               }));
 
-              // ดึงข้อมูลคอร์สทั้งหมดที่ติวเตอร์คนนี้เปิดสอน
               const { data: coursesData, error: coursesError } = await supabase
                 .from("courses")
                 .select("*")
@@ -113,15 +111,12 @@ export default function TutorDashboardPage() {
 
               if (coursesError) throw coursesError;
               if (coursesData) setCourses(coursesData);
-
-              // TODO: ในอนาคตถ้ามีตาราง bookings สามารถเขียน query ดึงยอดรายได้และจำนวนนักเรียนมาใส่ stats ตรงนี้ได้เลย
             } else {
               setIsPending(true);
             }
           }
         }
 
-        // ดึงข้อมูลรายวิชามาเตรียมไว้สำหรับตอนสมัคร
         const { data: subjectsData, error: subjectsError } = await supabase
           .from("master_subjects")
           .select("id, name, category")
@@ -138,6 +133,31 @@ export default function TutorDashboardPage() {
 
     checkUserAndFetchData();
   }, [supabase]);
+
+  // ================= เพิ่มฟังก์ชันลบคอร์สเรียนตรงนี้ =================
+  const handleDeleteCourse = async (courseId: string) => {
+    const confirmDelete = window.confirm(
+      "คุณแน่ใจหรือไม่ว่าต้องการลบคอร์สเรียนนี้? (การลบจะไม่สามารถกู้คืนได้)",
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from("courses")
+        .delete()
+        .eq("id", courseId);
+
+      if (error) throw error;
+
+      // ลบสำเร็จ ให้อัปเดต UI โดยดึงคอร์สที่ถูกลบออกจาก State ทันที
+      setCourses(courses.filter((course) => course.id !== courseId));
+    } catch (err) {
+      console.error("Error deleting course:", err);
+      alert("เกิดข้อผิดพลาด ไม่สามารถลบคอร์สเรียนได้");
+    }
+  };
+  // =========================================================
 
   const addSubjectRow = () => {
     setSelectedSubjects([...selectedSubjects, { subject_id: "", grade: "" }]);
@@ -292,7 +312,6 @@ export default function TutorDashboardPage() {
     return (
       <main className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-7xl mx-auto space-y-8">
-          {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">ภาพรวมการสอน</h1>
@@ -309,7 +328,6 @@ export default function TutorDashboardPage() {
             </Link>
           </div>
 
-          {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
               <div className="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center shrink-0">
@@ -372,9 +390,7 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
-          {/* Graph & Activity Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Real Graph (Starts at 0) */}
             <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
               <div className="flex items-center justify-between mb-8">
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -383,18 +399,17 @@ export default function TutorDashboardPage() {
                 </h3>
               </div>
 
-              {/* ถ้ากราฟเป็น 0 หมด จะแสดงแบบราบเรียบ */}
               <div className="h-48 flex items-end justify-between gap-3 pt-4 border-b border-gray-100 pb-1 relative">
                 {stats.views.every((v) => v === 0) && (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400 pointer-events-none">
-                    ยังไม่มีข้อมูลสถิติเข้าชม
+                  <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                    <span className="bg-white/90 px-4 py-2 rounded-xl text-sm font-medium text-gray-500 backdrop-blur-sm shadow-sm border border-gray-100">
+                      ยังไม่มีข้อมูลสถิติเข้าชม
+                    </span>
                   </div>
                 )}
                 {stats.views.map((height, index) => {
-                  // คำนวณความสูง (สมมติให้ Max คือ 100 view ถ้าเกินให้เป็น 100%)
                   const normalizedHeight =
                     height === 0 ? 0 : Math.min(100, (height / 100) * 100);
-
                   return (
                     <div
                       key={index}
@@ -404,7 +419,6 @@ export default function TutorDashboardPage() {
                         className="w-full bg-blue-500 rounded-t-lg transition-all duration-700 ease-in-out hover:bg-blue-600 min-h-1"
                         style={{ height: `${normalizedHeight}%` }}
                       ></div>
-                      {/* Tooltip */}
                       <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs py-1 px-2 rounded-md transition-opacity pointer-events-none whitespace-nowrap z-10">
                         {height} views
                       </div>
@@ -419,7 +433,6 @@ export default function TutorDashboardPage() {
               </div>
             </div>
 
-            {/* Recent Activity */}
             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col">
               <h3 className="text-lg font-bold text-gray-900 mb-6">
                 แจ้งเตือนล่าสุด
@@ -431,7 +444,6 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
-          {/* รายการคอร์สเรียน */}
           <div>
             <div className="flex items-center justify-between mb-6 mt-4">
               <h3 className="text-xl font-bold text-gray-900">
@@ -451,9 +463,23 @@ export default function TutorDashboardPage() {
                       <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg">
                         {course.teaching_format}
                       </span>
-                      <button className="text-gray-400 hover:text-blue-600 transition">
-                        <Edit className="w-5 h-5" />
-                      </button>
+
+                      {/* ================= ปุ่มแก้ไข และ ลบ ================= */}
+                      <div className="flex items-center gap-3">
+                        <Link
+                          href={`/dashboard/tutor/courses/${course.id}`}
+                          className="text-gray-400 hover:text-blue-600 transition"
+                        >
+                          <Edit className="w-5 h-5" />
+                        </Link>
+                        <button
+                          onClick={() => handleDeleteCourse(course.id)}
+                          className="text-gray-400 hover:text-red-500 transition"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                      {/* ==================================================== */}
                     </div>
 
                     <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2">
