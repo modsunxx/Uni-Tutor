@@ -89,28 +89,10 @@ export default function SearchPage() {
           {/* ข้อมูลโลโก้คณะ (ย้ายมาจัดชิดซ้ายให้เหมือน Figma) */}
           <div className="mb-8 text-white px-2">
             <div className="flex items-center gap-2 mb-1">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M12 2L22 12L12 22L2 12L12 2Z"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
               <span className="text-3xl font-bold tracking-tight drop-shadow-sm">
-                UniTutor
+                แพลตฟอร์มหาติวเตอร์สำหรับนักศึกษา
               </span>
             </div>
-            <p className="text-sm text-emerald-50 leading-relaxed font-light ml-8 drop-shadow-sm">
-              แพลตฟอร์มหาติวเตอร์สำหรับนักศึกษา
-            </p>
           </div>
 
           <div className="max-w-3xl relative mt-10">
