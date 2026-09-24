@@ -4,9 +4,8 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
-import { LogOut, BookOpen, LayoutDashboard } from "lucide-react";
+import { LogOut, LayoutDashboard } from "lucide-react";
 
-// ปรับ Type ให้รองรับทั้งตัวพิมพ์เล็กและพิมพ์ใหญ่
 type UserProfile = {
   id: string;
   first_name: string;
@@ -70,71 +69,86 @@ export default function Navbar() {
   const displayName = userProfile?.nickname || userProfile?.first_name || "";
 
   return (
-    <nav className="w-full bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+    <nav className="w-full bg-white/90 backdrop-blur-md border-b border-gray-100 sticky top-0 z-50 shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 h-18 flex items-center justify-between">
+        {/* โลโก้ใหม่ (สี่เหลี่ยมข้าวหลามตัด + สีเขียวเข้ม) */}
         <Link
           href="/"
-          className="font-bold text-2xl text-blue-600 flex items-center gap-2"
+          className="font-bold text-2xl text-emerald-800 flex items-center gap-2 tracking-tight hover:opacity-80 transition-opacity"
         >
-          <BookOpen className="w-6 h-6" />
-          Uni-Tutor
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 2L22 12L12 22L2 12L12 2Z"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          UniTutor
         </Link>
 
         <div className="flex items-center gap-6">
           <Link
             href="/search"
-            className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors"
+            className="text-sm font-semibold text-gray-600 hover:text-emerald-600 transition-colors"
           >
             ค้นหาคอร์ส
           </Link>
 
           {isLoading ? (
-            <div className="w-24 h-8 bg-gray-100 animate-pulse rounded-md"></div>
+            <div className="w-24 h-10 bg-gray-100 animate-pulse rounded-full"></div>
           ) : userProfile ? (
             <div className="flex items-center gap-4">
-              {/* บังคับแปลง Role เป็นพิมพ์เล็กทั้งหมดด้วย toLowerCase() */}
               <Link
                 href={
                   userProfile.role.toLowerCase() === "admin"
                     ? "/admin"
                     : `/dashboard/${userProfile.role.toLowerCase()}`
                 }
-                className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors"
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-emerald-600 transition-colors"
               >
                 <LayoutDashboard className="w-4 h-4" />
                 แดชบอร์ด
               </Link>
 
-              <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+              <div className="flex items-center gap-3 pl-5 border-l border-gray-200">
+                <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shadow-inner">
                   {displayName.charAt(0)}
                 </div>
-                <span className="text-sm font-semibold text-gray-700 hidden md:block">
+                <span className="text-sm font-bold text-gray-800 hidden md:block">
                   {displayName}
-                  <span className="ml-1 text-xs text-gray-400 font-normal">
-                    ({userProfile.role})
+                  <span className="ml-1.5 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    {userProfile.role}
                   </span>
                 </span>
                 <button
                   onClick={handleLogout}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all ml-1"
                   title="ออกจากระบบ"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-4.5 h-4.5" />
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-5 pl-2">
               <Link
                 href="/register"
-                className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors hidden md:block"
+                className="text-sm font-semibold text-gray-600 hover:text-emerald-600 transition-colors hidden md:block"
               >
                 สมัครสมาชิก
               </Link>
+              {/* ปุ่มเข้าสู่ระบบแบบโค้งมน */}
               <Link
                 href="/login"
-                className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                className="bg-[#1a1a1a] text-white text-sm font-semibold px-6 py-2.5 rounded-full hover:bg-black transition-all shadow-md active:scale-95"
               >
                 เข้าสู่ระบบ
               </Link>
