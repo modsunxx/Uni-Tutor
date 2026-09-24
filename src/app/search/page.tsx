@@ -31,12 +31,10 @@ export default function SearchPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // ย้ายฟังก์ชันมาสร้างและเรียกใช้จบใน useEffect ที่เดียวเลยครับ
   useEffect(() => {
     const fetchCourses = async () => {
       setIsLoading(true);
       try {
-        // ดึงข้อมูลคอร์ส และ Join ตารางที่เกี่ยวข้องเพื่อเอาชื่อวิชาและชื่อติวเตอร์มาโชว์
         const { data, error } = await supabase.from("courses").select(`
             id,
             title,
@@ -52,7 +50,6 @@ export default function SearchPage() {
         setCourses((data as unknown as Course[]) || []);
       } catch (err) {
         console.error("Supabase Error Details:", err);
-        // แปลง type ของ err ให้ปลอดภัยตามหลัก TypeScript โดยไม่ใช้ any
         const errorObj = err as { message?: string; details?: string };
 
         setErrorMsg(
@@ -64,10 +61,8 @@ export default function SearchPage() {
     };
 
     fetchCourses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // ปล่อย Array ว่างไว้ เพื่อให้ทำงานแค่ครั้งเดียวตอนโหลดหน้า
+  }, [supabase]);
 
-  // กรองคอร์สตามคำค้นหา (ค้นหาจากชื่อคอร์ส หรือ ชื่อวิชา)
   const filteredCourses = courses.filter((course) => {
     const titleMatch = course.title
       ?.toLowerCase()
@@ -80,35 +75,64 @@ export default function SearchPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 pb-12">
-      {/* Header & Search Section */}
-      <div className="bg-blue-600 pt-16 pb-24 px-4">
-        <div className="max-w-7xl mx-auto text-center">
-          <h1 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            ค้นหาคอร์สเรียนและติวเตอร์ที่ใช่
-          </h1>
-          <p className="text-blue-100 mb-8 max-w-2xl mx-auto">
-            รวบรวมคอร์สติวจากรุ่นพี่และเพื่อนๆ มทร.ตะวันออก ครบทุกคณะ ทุกสาขา
-          </p>
+      {/* === Header & Search Section แบบใหม่ (ธีมเขียว Figma) === */}
+      <div className="relative pt-16 pb-28 px-4 overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 rounded-b-[2.5rem] shadow-md">
+        {/* กลุ่มวงกลมตกแต่ง (Blobs) สำหรับ Header */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-10 -right-10 w-62.5 h-62.5 bg-[#285A48] opacity-20 rounded-full"></div>
+          <div className="absolute top-10 right-40 w-37.5 h-37.5 bg-black opacity-10 rounded-full"></div>
+          <div className="absolute -bottom-20 -left-10 w-75 h-75 bg-black opacity-10 rounded-full"></div>
+          <div className="absolute top-[40%] left-20 w-37.5 h-37.5 bg-[#408A71] opacity-40 rounded-full"></div>
+        </div>
 
-          <div className="max-w-2xl mx-auto relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+        <div className="relative z-10 max-w-7xl mx-auto">
+          {/* ข้อมูลโลโก้คณะ (ย้ายมาจัดชิดซ้ายให้เหมือน Figma) */}
+          <div className="mb-8 text-white px-2">
+            <div className="flex items-center gap-2 mb-1">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M12 2L22 12L12 22L2 12L12 2Z"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span className="text-3xl font-bold tracking-tight drop-shadow-sm">
+                UniTutor
+              </span>
+            </div>
+            <p className="text-sm text-emerald-50 leading-relaxed font-light ml-8 drop-shadow-sm">
+              แพลตฟอร์มหาติวเตอร์สำหรับนักศึกษา
+            </p>
+          </div>
+
+          <div className="max-w-3xl relative mt-10">
+            <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
               <Search className="h-5 w-5 text-gray-400" />
             </div>
             <input
               type="text"
-              className="block w-full pl-11 pr-4 py-4 rounded-xl border-0 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-500 shadow-lg outline-none text-gray-900"
-              placeholder="ค้นหาชื่อวิชา หรือชื่อคอร์สเรียน..."
+              className="block w-full pl-14 pr-6 py-4 rounded-full border-0 focus:ring-4 focus:ring-emerald-500/30 shadow-2xl outline-none text-gray-900 font-medium transition-all"
+              placeholder="ค้นหารายวิชา / รุ่นพี่ / ติวเตอร์..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
         </div>
       </div>
+      {/* ======================================================== */}
 
       {/* Course Gallery Section */}
-      <div className="max-w-7xl mx-auto px-4 -mt-12 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-20">
         {errorMsg && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-lg text-center mb-8 shadow-sm">
+          <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center mb-8 shadow-sm border border-red-100">
             {errorMsg}
           </div>
         )}
@@ -118,7 +142,7 @@ export default function SearchPage() {
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
                 key={i}
-                className="bg-white h-64 rounded-2xl animate-pulse shadow-sm border border-gray-100"
+                className="bg-white h-64 rounded-4xl animate-pulse shadow-sm border border-gray-100"
               ></div>
             ))}
           </div>
@@ -136,53 +160,62 @@ export default function SearchPage() {
                   key={course.id}
                   className="group block"
                 >
-                  <div className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-shadow duration-300 border border-gray-100 overflow-hidden flex flex-col h-full">
-                    {/* Card Header (Category & Price) */}
-                    <div className="p-5 border-b border-gray-50 flex justify-between items-start">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                  <div className="bg-white rounded-4xl shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-100 overflow-hidden flex flex-col h-full">
+                    {/* Card Header */}
+                    <div className="p-6 border-b border-gray-50 flex justify-between items-start">
+                      <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">
                         <BookOpen className="w-3.5 h-3.5" />
                         {course.master_subjects?.category || "ทั่วไป"}
                       </span>
-                      <span className="text-lg font-bold text-blue-600">
+                      <span className="text-xl font-bold text-emerald-600">
                         ฿{course.price_per_hour}
-                        <span className="text-sm font-normal text-gray-500">
+                        <span className="text-sm font-medium text-gray-400">
                           /ชม.
                         </span>
                       </span>
                     </div>
 
                     {/* Card Body */}
-                    <div className="p-5 flex-1 flex flex-col">
-                      <h3 className="text-lg font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors line-clamp-2">
+                    <div className="p-6 flex-1 flex flex-col">
+                      <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-emerald-600 transition-colors line-clamp-2">
                         {course.title}
                       </h3>
-                      <p className="text-sm text-gray-500 mb-4">
-                        วิชา: {course.master_subjects?.name || "ไม่ระบุวิชา"}
+                      <p className="text-sm text-gray-500 mb-6 font-medium">
+                        วิชา:{" "}
+                        <span className="text-gray-700">
+                          {course.master_subjects?.name || "ไม่ระบุวิชา"}
+                        </span>
                       </p>
 
-                      <div className="mt-auto space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <User className="w-4 h-4 text-gray-400" />
+                      <div className="mt-auto space-y-3 bg-gray-50 p-4 rounded-2xl">
+                        <div className="flex items-center gap-3 text-sm text-gray-700">
+                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm">
+                            <User className="w-4 h-4 text-emerald-600" />
+                          </div>
                           <span>
                             สอนโดย{" "}
-                            <span className="font-medium text-gray-900">
+                            <span className="font-bold text-gray-900">
                               {tutorName}
                             </span>
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          {course.teaching_format === "online" ? (
-                            <MonitorPlay className="w-4 h-4 text-emerald-500" />
-                          ) : (
-                            <MapPin className="w-4 h-4 text-rose-500" />
-                          )}
-                          <span className="capitalize">
+                        <div className="flex items-center gap-3 text-sm text-gray-700">
+                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm">
+                            {course.teaching_format === "online" ? (
+                              <MonitorPlay className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <MapPin className="w-4 h-4 text-emerald-600" />
+                            )}
+                          </div>
+                          <span className="capitalize font-medium">
                             รูปแบบ:{" "}
-                            {course.teaching_format === "online"
-                              ? "ออนไลน์"
-                              : course.teaching_format === "onsite"
-                                ? "ออนไซต์"
-                                : "ผสมผสาน (Hybrid)"}
+                            <span className="text-gray-900">
+                              {course.teaching_format === "online"
+                                ? "ออนไลน์"
+                                : course.teaching_format === "onsite"
+                                  ? "ออนไซต์"
+                                  : "ผสมผสาน (Hybrid)"}
+                            </span>
                           </span>
                         </div>
                       </div>
@@ -194,14 +227,14 @@ export default function SearchPage() {
           </div>
         ) : (
           /* Empty State */
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
-            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-gray-400" />
+          <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-16 text-center">
+            <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Search className="w-10 h-10 text-emerald-600" />
             </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-1">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">
               ไม่พบคอร์สเรียน
             </h3>
-            <p className="text-gray-500">
+            <p className="text-gray-500 text-lg">
               {searchQuery
                 ? "ลองค้นหาด้วยคำอื่นดูอีกครั้งนะครับ"
                 : "ยังไม่มีคอร์สเรียนในระบบตอนนี้ ติวเตอร์คนไหนพร้อมสอน มาสร้างคอร์สแรกกันเลย!"}
