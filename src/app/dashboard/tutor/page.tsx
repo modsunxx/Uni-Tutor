@@ -48,19 +48,16 @@ export default function TutorDashboardPage() {
   const [isPending, setIsPending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ข้อมูลคอร์สเรียน
   const [courses, setCourses] = useState<Course[]>([]);
 
-  // ข้อมูลสถิติของติวเตอร์ (ของจริง)
   const [stats, setStats] = useState({
     revenue: 0,
     students: 0,
     rating: 0,
     reviewCount: 0,
-    views: [0, 0, 0, 0, 0, 0, 0], // จันทร์ - อาทิตย์
+    views: [0, 0, 0, 0, 0, 0, 0],
   });
 
-  // สเตตัสฟอร์มสมัคร
   const [bio, setBio] = useState("");
   const [gpa, setGpa] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -84,7 +81,6 @@ export default function TutorDashboardPage() {
         if (session?.user) {
           setUser(session.user);
 
-          // เช็คสถานะและดึงข้อมูลโปรไฟล์
           const { data: tutorProfile, error } = await supabase
             .from("tutor_profiles")
             .select("id, is_verified, rating, review_count")
@@ -134,7 +130,6 @@ export default function TutorDashboardPage() {
     checkUserAndFetchData();
   }, [supabase]);
 
-  // ================= เพิ่มฟังก์ชันลบคอร์สเรียนตรงนี้ =================
   const handleDeleteCourse = async (courseId: string) => {
     const confirmDelete = window.confirm(
       "คุณแน่ใจหรือไม่ว่าต้องการลบคอร์สเรียนนี้? (การลบจะไม่สามารถกู้คืนได้)",
@@ -150,14 +145,12 @@ export default function TutorDashboardPage() {
 
       if (error) throw error;
 
-      // ลบสำเร็จ ให้อัปเดต UI โดยดึงคอร์สที่ถูกลบออกจาก State ทันที
       setCourses(courses.filter((course) => course.id !== courseId));
     } catch (err) {
       console.error("Error deleting course:", err);
       alert("เกิดข้อผิดพลาด ไม่สามารถลบคอร์สเรียนได้");
     }
   };
-  // =========================================================
 
   const addSubjectRow = () => {
     setSelectedSubjects([...selectedSubjects, { subject_id: "", grade: "" }]);
@@ -256,21 +249,21 @@ export default function TutorDashboardPage() {
   if (isLoading) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
       </main>
     );
   }
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-bold text-gray-800">
+      <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-[2.5rem] shadow-xl p-10 text-center max-w-md w-full border border-gray-100">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
             กรุณาเข้าสู่ระบบก่อน
           </h2>
           <Link
             href="/login"
-            className="text-blue-600 hover:underline mt-2 inline-block"
+            className="inline-block bg-[#1a1a1a] text-white font-semibold px-8 py-3.5 rounded-full hover:bg-black transition-all shadow-md"
           >
             ไปที่หน้าเข้าสู่ระบบ
           </Link>
@@ -279,24 +272,32 @@ export default function TutorDashboardPage() {
     );
   }
 
+  // --- สถานะรอการตรวจสอบ ---
   if (isPending) {
     return (
-      <main className="min-h-screen bg-gray-50 py-12 px-4 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
-          <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Clock className="w-8 h-8" />
+      <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 p-4">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-12 -right-12 w-79 h-69.5 bg-[#285A48] opacity-10 rounded-full"></div>
+          <div className="absolute top-8 right-40 w-54.5 h-54.5 bg-black opacity-10 rounded-full"></div>
+          <div className="absolute -bottom-16 -right-12 w-75 h-79 bg-black opacity-10 rounded-full"></div>
+          <div className="absolute bottom-12 right-32 w-49 h-45 bg-[#408A71] opacity-30 rounded-full"></div>
+        </div>
+
+        <div className="relative z-10 max-w-lg w-full bg-white rounded-[2.5rem] shadow-2xl p-10 md:p-12 text-center">
+          <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+            <Clock className="w-10 h-10" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">
             คำขออยู่ระหว่างตรวจสอบ
           </h1>
-          <p className="text-gray-500 mb-6">
+          <p className="text-gray-500 mb-8 leading-relaxed">
             แอดมินกำลังตรวจสอบความถูกต้องของผลการเรียน (Transcript)
             เทียบกับรายวิชาที่คุณยื่นขอสอน กรุณารอการอนุมัติภายใน 1-2
             วันทำการครับ
           </p>
           <Link
             href="/dashboard/learner"
-            className="text-blue-600 font-medium hover:underline"
+            className="inline-flex items-center justify-center bg-[#1a1a1a] text-white font-semibold px-8 py-3.5 rounded-full hover:bg-black transition-all shadow-lg active:scale-95"
           >
             &larr; กลับไปที่แดชบอร์ดนักศึกษา
           </Link>
@@ -310,28 +311,41 @@ export default function TutorDashboardPage() {
     const days = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."];
 
     return (
-      <main className="min-h-screen bg-gray-50 py-8 px-4">
-        <div className="max-w-7xl mx-auto space-y-8">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <main className="min-h-screen bg-gray-50 pb-16">
+        {/* Header Section (ธีมเขียว Emerald + Blobs) */}
+        <div className="relative pt-14 pb-28 px-4 overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 rounded-b-[2.5rem] shadow-md">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute -top-10 -right-10 w-62.5 h-62.5 bg-[#285A48] opacity-20 rounded-full"></div>
+            <div className="absolute top-10 right-40 w-37.5 h-37.5 bg-black opacity-10 rounded-full"></div>
+            <div className="absolute -bottom-20 -left-10 bg-black opacity-10 rounded-full"></div>
+            <div className="absolute top-[30%] left-16 w-37.5 h-37.5 bg-[#408A71] opacity-30 rounded-full"></div>
+          </div>
+
+          <div className="relative z-10 max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-2">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">ภาพรวมการสอน</h1>
-              <p className="text-gray-500 mt-1">
+              <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight drop-shadow-sm">
+                ภาพรวมการสอน
+              </h1>
+              <p className="text-emerald-50 mt-1 text-base md:text-lg font-light drop-shadow-sm">
                 ยินดีต้อนรับกลับ! นี่คือสถิติและคอร์สเรียนของคุณในขณะนี้
               </p>
             </div>
             <Link
               href="/dashboard/tutor/courses/new"
-              className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-medium flex items-center gap-2 hover:bg-blue-700 transition shadow-sm"
+              className="bg-[#1a1a1a] text-white px-6 py-3 rounded-full font-semibold flex items-center gap-2 hover:bg-black transition-all shadow-xl active:scale-95"
             >
               <PlusCircle className="w-5 h-5" />
               สร้างคอร์สใหม่
             </Link>
           </div>
+        </div>
 
+        <div className="max-w-7xl mx-auto px-4 -mt-14 relative z-20 space-y-8">
+          {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-              <div className="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center shrink-0">
-                <Wallet className="w-6 h-6" />
+            <div className="bg-white p-6 rounded-4xl border border-gray-100 shadow-lg flex items-center gap-4">
+              <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
+                <Wallet className="w-7 h-7" />
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-500">รายได้สะสม</p>
@@ -340,9 +354,9 @@ export default function TutorDashboardPage() {
                 </h3>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shrink-0">
-                <Users className="w-6 h-6" />
+            <div className="bg-white p-6 rounded-4xl border border-gray-100 shadow-lg flex items-center gap-4">
+              <div className="w-14 h-14 bg-teal-50 text-teal-600 rounded-full flex items-center justify-center shrink-0">
+                <Users className="w-7 h-7" />
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-500">
@@ -356,9 +370,9 @@ export default function TutorDashboardPage() {
                 </h3>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-              <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center shrink-0">
-                <BookOpen className="w-6 h-6" />
+            <div className="bg-white p-6 rounded-4xl border border-gray-100 shadow-lg flex items-center gap-4">
+              <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
+                <BookOpen className="w-7 h-7" />
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-500">
@@ -372,9 +386,9 @@ export default function TutorDashboardPage() {
                 </h3>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-              <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shrink-0">
-                <Star className="w-6 h-6" />
+            <div className="bg-white p-6 rounded-4xl border border-gray-100 shadow-lg flex items-center gap-4">
+              <div className="w-14 h-14 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center shrink-0">
+                <Star className="w-7 h-7" />
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-500">
@@ -390,11 +404,12 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
+          {/* Graph & Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="lg:col-span-2 bg-white p-8 rounded-4xl border border-gray-100 shadow-sm">
               <div className="flex items-center justify-between mb-8">
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-blue-500" />{" "}
+                  <BarChart3 className="w-5 h-5 text-emerald-600" />{" "}
                   สถิติคนเข้าชมคอร์ส (สัปดาห์นี้)
                 </h3>
               </div>
@@ -413,10 +428,10 @@ export default function TutorDashboardPage() {
                   return (
                     <div
                       key={index}
-                      className="w-full bg-blue-50 rounded-t-lg relative group h-full flex items-end"
+                      className="w-full bg-emerald-50/70 rounded-t-xl relative group h-full flex items-end"
                     >
                       <div
-                        className="w-full bg-blue-500 rounded-t-lg transition-all duration-700 ease-in-out hover:bg-blue-600 min-h-1"
+                        className="w-full bg-emerald-500 rounded-t-xl transition-all duration-700 ease-in-out hover:bg-emerald-600 min-h-1"
                         style={{ height: `${normalizedHeight}%` }}
                       ></div>
                       <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs py-1 px-2 rounded-md transition-opacity pointer-events-none whitespace-nowrap z-10">
@@ -433,7 +448,7 @@ export default function TutorDashboardPage() {
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col">
+            <div className="bg-white p-8 rounded-4xl border border-gray-100 shadow-sm flex flex-col">
               <h3 className="text-lg font-bold text-gray-900 mb-6">
                 แจ้งเตือนล่าสุด
               </h3>
@@ -444,8 +459,9 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
+          {/* Course List */}
           <div>
-            <div className="flex items-center justify-between mb-6 mt-4">
+            <div className="flex items-center justify-between mb-6 mt-4 px-2">
               <h3 className="text-xl font-bold text-gray-900">
                 จัดการคอร์สเรียน ({courses.length})
               </h3>
@@ -456,19 +472,18 @@ export default function TutorDashboardPage() {
                 {courses.map((course) => (
                   <div
                     key={course.id}
-                    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition p-6 flex flex-col relative overflow-hidden group"
+                    className="bg-white rounded-4xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 p-6 flex flex-col relative overflow-hidden group"
                   >
-                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
                     <div className="flex justify-between items-start mb-4">
-                      <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg">
+                      <span className="inline-block px-3.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full">
                         {course.teaching_format}
                       </span>
 
-                      {/* ================= ปุ่มแก้ไข และ ลบ ================= */}
                       <div className="flex items-center gap-3">
                         <Link
                           href={`/dashboard/tutor/courses/${course.id}`}
-                          className="text-gray-400 hover:text-blue-600 transition"
+                          className="text-gray-400 hover:text-emerald-600 transition"
                         >
                           <Edit className="w-5 h-5" />
                         </Link>
@@ -479,7 +494,6 @@ export default function TutorDashboardPage() {
                           <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
-                      {/* ==================================================== */}
                     </div>
 
                     <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2">
@@ -491,7 +505,7 @@ export default function TutorDashboardPage() {
                     </p>
 
                     <div className="pt-4 border-t border-gray-50 flex items-center justify-between">
-                      <div className="text-gray-900 font-bold text-lg">
+                      <div className="text-emerald-600 font-bold text-lg">
                         ฿{course.price_per_hour}{" "}
                         <span className="text-gray-400 text-sm font-normal">
                           / ชม.
@@ -502,9 +516,11 @@ export default function TutorDashboardPage() {
                 ))}
               </div>
             ) : (
-              <div className="bg-white rounded-2xl border border-gray-100 border-dashed p-12 text-center">
-                <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-gray-900 mb-2">
+              <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-14 text-center">
+                <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <BookOpen className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
                   ยังไม่มีคอร์สเรียน
                 </h3>
                 <p className="text-gray-500 mb-6">
@@ -512,7 +528,7 @@ export default function TutorDashboardPage() {
                 </p>
                 <Link
                   href="/dashboard/tutor/courses/new"
-                  className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-5 py-2.5 rounded-xl font-medium hover:bg-blue-100 transition"
+                  className="inline-flex items-center gap-2 bg-[#1a1a1a] text-white px-7 py-3 rounded-full font-semibold hover:bg-black transition-all shadow-md"
                 >
                   <PlusCircle className="w-5 h-5" />
                   สร้างคอร์สเลย
@@ -525,15 +541,25 @@ export default function TutorDashboardPage() {
     );
   }
 
-  // --- หน้าฟอร์มสมัครติวเตอร์ ---
+  // --- หน้าฟอร์มสมัครติวเตอร์ (ธีมเขียว Figma + แก้สีตัวหนังสือ Input) ---
   return (
-    <main className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+    <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 py-12 px-4">
+      {/* กลุ่มวงกลมตกแต่ง (Blobs) */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-12 -right-12 w-79 h-69.5 bg-[#285A48] opacity-10 rounded-full"></div>
+        <div className="absolute top-8 right-40 w-54.5 h-54.5 bg-black opacity-10 rounded-full"></div>
+        <div className="absolute -bottom-16 -right-12 w-75 h-79 bg-black opacity-10 rounded-full"></div>
+        <div className="absolute bottom-12 right-32 w-49 h-45 bg-[#408A71] opacity-30 rounded-full"></div>
+        <div className="absolute top-[50%] -left-16 w-66 h-78 bg-black opacity-10 rounded-full"></div>
+        <div className="absolute top-[65%] left-16 w-57.5 h-49.5 bg-[#408A71] opacity-30 rounded-full"></div>
+      </div>
+
+      <div className="relative z-10 max-w-2xl w-full bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
             <UserCheck className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
             อัปเกรดบัญชีเป็นติวเตอร์
           </h1>
           <p className="text-gray-500">
@@ -542,7 +568,7 @@ export default function TutorDashboardPage() {
         </div>
 
         {errorMsg && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 border border-red-100 text-center">
+          <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm mb-6 border border-red-100 text-center">
             {errorMsg}
           </div>
         )}
@@ -550,7 +576,7 @@ export default function TutorDashboardPage() {
         <form onSubmit={handleBecomeTutor} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
                 แนะนำตัวสั้นๆ (Bio) <span className="text-red-500">*</span>
               </label>
               <textarea
@@ -558,13 +584,13 @@ export default function TutorDashboardPage() {
                 rows={2}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                className="w-full px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none resize-none bg-gray-50/50 text-gray-900 placeholder:text-gray-400 transition-all"
                 placeholder="เช่น ถนัดวิชาเขียนโปรแกรม สอนสนุก เป็นกันเอง..."
               ></textarea>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
                 เกรดเฉลี่ยสะสมรวม (GPAX) <span className="text-red-500">*</span>
               </label>
               <input
@@ -575,7 +601,7 @@ export default function TutorDashboardPage() {
                 required
                 value={gpa}
                 onChange={(e) => setGpa(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-gray-50/50 text-gray-900 placeholder:text-gray-400 transition-all"
                 placeholder="เช่น 3.50"
               />
             </div>
@@ -585,14 +611,14 @@ export default function TutorDashboardPage() {
 
           <div>
             <div className="flex items-center justify-between mb-3">
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-semibold text-gray-700 ml-1">
                 วิชาที่ต้องการขอสิทธิ์สอน{" "}
                 <span className="text-red-500">*</span>
               </label>
               <button
                 type="button"
                 onClick={addSubjectRow}
-                className="text-sm flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium bg-blue-50 px-3 py-1.5 rounded-lg"
+                className="text-sm flex items-center gap-1 text-emerald-700 hover:bg-emerald-100 font-semibold bg-emerald-50 px-3.5 py-1.5 rounded-full transition-colors"
               >
                 <Plus className="w-4 h-4" /> เพิ่มวิชา
               </button>
@@ -602,7 +628,7 @@ export default function TutorDashboardPage() {
               {selectedSubjects.map((subject, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200"
+                  className="flex items-center gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-200/80"
                 >
                   <div className="flex-1">
                     <select
@@ -611,14 +637,14 @@ export default function TutorDashboardPage() {
                       onChange={(e) =>
                         updateSubjectRow(index, "subject_id", e.target.value)
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900"
                     >
                       <option value="" disabled>
                         -- เลือกรายวิชา --
                       </option>
                       {masterSubjects.map((ms) => (
                         <option key={ms.id} value={ms.id}>
-                          {ms.name} ({ms.category})
+                          {ms.name} ({ms.category || "ทั่วไป"})
                         </option>
                       ))}
                     </select>
@@ -632,14 +658,14 @@ export default function TutorDashboardPage() {
                       onChange={(e) =>
                         updateSubjectRow(index, "grade", e.target.value)
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm uppercase"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 placeholder:text-gray-400 uppercase"
                     />
                   </div>
                   {selectedSubjects.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeSubjectRow(index)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -647,7 +673,7 @@ export default function TutorDashboardPage() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-gray-500 mt-2 ml-1">
               * แอดมินจะตรวจสอบเกรดแต่ละวิชาจากรูป Transcript
               ที่คุณแนบมาด้านล่าง
             </p>
@@ -656,15 +682,15 @@ export default function TutorDashboardPage() {
           <hr className="border-gray-100" />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
               ไฟล์ผลการเรียน (Transcript) อัปเดตล่าสุด{" "}
               <span className="text-red-500">*</span>
             </label>
-            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-xl hover:bg-gray-50 transition-colors">
+            <div className="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-emerald-200 border-dashed rounded-2xl hover:bg-emerald-50/30 transition-colors">
               <div className="space-y-1 text-center">
-                <UploadCloud className="mx-auto h-12 w-12 text-gray-400" />
+                <UploadCloud className="mx-auto h-12 w-12 text-emerald-500" />
                 <div className="flex text-sm text-gray-600 justify-center">
-                  <label className="relative cursor-pointer bg-transparent rounded-md font-medium text-blue-600 hover:text-blue-500">
+                  <label className="relative cursor-pointer bg-transparent rounded-md font-semibold text-emerald-600 hover:text-emerald-700">
                     <span>อัปโหลดไฟล์ภาพ หรือ PDF</span>
                     <input
                       type="file"
@@ -687,7 +713,7 @@ export default function TutorDashboardPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white font-semibold py-3.5 rounded-xl hover:bg-blue-700 transition-colors disabled:bg-blue-400 mt-6"
+            className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] text-white font-semibold py-4 rounded-full hover:bg-black transition-all shadow-xl active:scale-[0.98] disabled:opacity-50 mt-6 text-lg"
           >
             {isSubmitting ? (
               "กำลังส่งคำขอ..."
