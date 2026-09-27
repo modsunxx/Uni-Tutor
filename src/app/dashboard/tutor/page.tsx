@@ -17,18 +17,24 @@ import {
   Users,
   Star,
   BarChart3,
+  Search,
+  ChevronDown,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 
 type Subject = {
   id: string;
+  code: string;
   name: string;
-  category: string;
+  category: string | null;
 };
 
 type SelectedSubject = {
   subject_id: string;
   grade: string;
+  searchText: string;
+  isOpen: boolean;
 };
 
 type Course = {
@@ -48,6 +54,11 @@ export default function TutorDashboardPage() {
   const [isPending, setIsPending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ข้อมูลชื่อและคำนำหน้าชื่อจากตาราง users
+  const [prefix, setPrefix] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+
   const [courses, setCourses] = useState<Course[]>([]);
 
   const [stats, setStats] = useState({
@@ -64,7 +75,7 @@ export default function TutorDashboardPage() {
 
   const [masterSubjects, setMasterSubjects] = useState<Subject[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<SelectedSubject[]>([
-    { subject_id: "", grade: "" },
+    { subject_id: "", grade: "", searchText: "", isOpen: false },
   ]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,6 +91,18 @@ export default function TutorDashboardPage() {
 
         if (session?.user) {
           setUser(session.user);
+
+          const { data: userData } = await supabase
+            .from("users")
+            .select("prefix, first_name, last_name")
+            .eq("id", session.user.id)
+            .maybeSingle();
+
+          if (userData) {
+            setPrefix(userData.prefix || "");
+            setFirstName(userData.first_name || "");
+            setLastName(userData.last_name || "");
+          }
 
           const { data: tutorProfile, error } = await supabase
             .from("tutor_profiles")
@@ -113,10 +136,12 @@ export default function TutorDashboardPage() {
           }
         }
 
+        // ดึงข้อมูลรหัสวิชา (code) และชื่อวิชา (name) ทั้งหมด
         const { data: subjectsData, error: subjectsError } = await supabase
           .from("master_subjects")
-          .select("id, name, category")
-          .order("name", { ascending: true });
+          .select("id, code, name, category")
+          .order("code", { ascending: true })
+          .range(0, 2000);
 
         if (subjectsError) throw subjectsError;
         if (subjectsData) setMasterSubjects(subjectsData);
@@ -153,7 +178,10 @@ export default function TutorDashboardPage() {
   };
 
   const addSubjectRow = () => {
-    setSelectedSubjects([...selectedSubjects, { subject_id: "", grade: "" }]);
+    setSelectedSubjects([
+      ...selectedSubjects,
+      { subject_id: "", grade: "", searchText: "", isOpen: false },
+    ]);
   };
 
   const removeSubjectRow = (index: number) => {
@@ -162,19 +190,46 @@ export default function TutorDashboardPage() {
     setSelectedSubjects(newSubjects);
   };
 
-  const updateSubjectRow = (
+  const updateSubjectRow = <K extends keyof SelectedSubject>(
     index: number,
-    field: keyof SelectedSubject,
-    value: string,
+    field: K,
+    value: SelectedSubject[K],
   ) => {
     const newSubjects = [...selectedSubjects];
-    newSubjects[index][field] = value;
+    newSubjects[index] = { ...newSubjects[index], [field]: value };
+    setSelectedSubjects(newSubjects);
+  };
+
+  const handleSelectSubject = (index: number, ms: Subject) => {
+    const newSubjects = [...selectedSubjects];
+    newSubjects[index] = {
+      ...newSubjects[index],
+      subject_id: String(ms.id),
+      searchText: `${ms.code} - ${ms.name}`,
+      isOpen: false,
+    };
+    setSelectedSubjects(newSubjects);
+  };
+
+  const handleClearSubject = (index: number) => {
+    const newSubjects = [...selectedSubjects];
+    newSubjects[index] = {
+      ...newSubjects[index],
+      subject_id: "",
+      searchText: "",
+      isOpen: true,
+    };
     setSelectedSubjects(newSubjects);
   };
 
   const handleBecomeTutor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    if (!prefix) {
+      setErrorMsg("กรุณาเลือกคำนำหน้าชื่อให้ตรงกับใบผลการเรียน");
+      return;
+    }
 
     if (!file) {
       setErrorMsg("กรุณาอัปโหลดไฟล์หลักฐานผลการเรียน (Transcript)");
@@ -186,7 +241,7 @@ export default function TutorDashboardPage() {
     );
     if (hasEmptySubject) {
       setErrorMsg(
-        "กรุณาเลือกวิชาและระบุเกรดให้ครบถ้วน หรือลบแถวที่ไม่ได้ใช้ออก",
+        "กรุณาคลิกเลือกวิชาจากรายการค้นหาและระบุเกรดให้ครบถ้วน หรือลบแถวที่ไม่ได้ใช้ออก",
       );
       return;
     }
@@ -195,6 +250,13 @@ export default function TutorDashboardPage() {
     setErrorMsg("");
 
     try {
+      const { error: userUpdateError } = await supabase
+        .from("users")
+        .update({ prefix: prefix })
+        .eq("id", user.id);
+
+      if (userUpdateError) throw userUpdateError;
+
       const fileExt = file.name.split(".").pop();
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
@@ -224,7 +286,7 @@ export default function TutorDashboardPage() {
       const subjectsToInsert = selectedSubjects.map((sub) => ({
         tutor_id: user.id,
         subject_id: parseInt(sub.subject_id),
-        grade: sub.grade,
+        grade: sub.grade.toUpperCase().trim(),
         status: "pending",
       }));
 
@@ -245,6 +307,10 @@ export default function TutorDashboardPage() {
       setIsSubmitting(false);
     }
   };
+
+  const fullNameWithPrefix = firstName
+    ? `${prefix}${firstName} ${lastName}`.trim()
+    : "";
 
   if (isLoading) {
     return (
@@ -291,9 +357,11 @@ export default function TutorDashboardPage() {
             คำขออยู่ระหว่างตรวจสอบ
           </h1>
           <p className="text-gray-500 mb-8 leading-relaxed">
-            แอดมินกำลังตรวจสอบความถูกต้องของผลการเรียน (Transcript)
-            เทียบกับรายวิชาที่คุณยื่นขอสอน กรุณารอการอนุมัติภายใน 1-2
-            วันทำการครับ
+            แอดมินกำลังตรวจสอบความถูกต้องของผลการเรียน (Transcript) ของ{" "}
+            <span className="font-semibold text-gray-800">
+              {fullNameWithPrefix || "คุณ"}
+            </span>{" "}
+            เทียบกับรายวิชาที่ยื่นขอสอน กรุณารอการอนุมัติภายใน 1-2 วันทำการครับ
           </p>
           <Link
             href="/dashboard/learner"
@@ -312,7 +380,6 @@ export default function TutorDashboardPage() {
 
     return (
       <main className="min-h-screen bg-gray-50 pb-16">
-        {/* Header Section (ธีมเขียว Emerald + Blobs) */}
         <div className="relative pt-14 pb-28 px-4 overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 rounded-b-[2.5rem] shadow-md">
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute -top-10 -right-10 w-62.5 h-62.5 bg-[#285A48] opacity-20 rounded-full"></div>
@@ -327,7 +394,9 @@ export default function TutorDashboardPage() {
                 ภาพรวมการสอน
               </h1>
               <p className="text-emerald-50 mt-1 text-base md:text-lg font-light drop-shadow-sm">
-                ยินดีต้อนรับกลับ! นี่คือสถิติและคอร์สเรียนของคุณในขณะนี้
+                ยินดีต้อนรับกลับ
+                {fullNameWithPrefix ? ` ${fullNameWithPrefix}` : ""}!
+                นี่คือสถิติและคอร์สเรียนของคุณในขณะนี้
               </p>
             </div>
             <Link
@@ -341,7 +410,6 @@ export default function TutorDashboardPage() {
         </div>
 
         <div className="max-w-7xl mx-auto px-4 -mt-14 relative z-20 space-y-8">
-          {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-4xl border border-gray-100 shadow-lg flex items-center gap-4">
               <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
@@ -404,7 +472,6 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
-          {/* Graph & Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white p-8 rounded-4xl border border-gray-100 shadow-sm">
               <div className="flex items-center justify-between mb-8">
@@ -459,7 +526,6 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
-          {/* Course List */}
           <div>
             <div className="flex items-center justify-between mb-6 mt-4 px-2">
               <h3 className="text-xl font-bold text-gray-900">
@@ -541,10 +607,9 @@ export default function TutorDashboardPage() {
     );
   }
 
-  // --- หน้าฟอร์มสมัครติวเตอร์ (ธีมเขียว Figma + แก้สีตัวหนังสือ Input) ---
+  // --- หน้าฟอร์มสมัครติวเตอร์ (ค้นหารหัสวิชา+ชื่อวิชาแบบพิมพ์ได้) ---
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 py-12 px-4">
-      {/* กลุ่มวงกลมตกแต่ง (Blobs) */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute -top-12 -right-12 w-79 h-69.5 bg-[#285A48] opacity-10 rounded-full"></div>
         <div className="absolute top-8 right-40 w-54.5 h-54.5 bg-black opacity-10 rounded-full"></div>
@@ -574,6 +639,38 @@ export default function TutorDashboardPage() {
         )}
 
         <form onSubmit={handleBecomeTutor} className="space-y-6">
+          <div className="bg-emerald-50/60 border border-emerald-100 p-4 rounded-2xl space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+              <div>
+                <label className="block text-xs font-semibold text-emerald-900 mb-1 ml-1">
+                  คำนำหน้าชื่อ <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={prefix}
+                  onChange={(e) => setPrefix(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 font-medium"
+                >
+                  <option value="" disabled>
+                    -- เลือก --
+                  </option>
+                  <option value="นาย">นาย</option>
+                  <option value="นางสาว">นางสาว</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-emerald-900 mb-1 ml-1">
+                  ชื่อ-นามสกุลผู้สมัคร (อ้างอิงตามใบผลการเรียน)
+                </label>
+                <div className="w-full px-4 py-2.5 bg-white/80 border border-emerald-100 rounded-xl text-sm font-bold text-gray-800">
+                  {prefix
+                    ? `${prefix}${firstName} ${lastName}`
+                    : `${firstName} ${lastName}`}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="md:col-span-2">
               <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
@@ -609,6 +706,7 @@ export default function TutorDashboardPage() {
 
           <hr className="border-gray-100" />
 
+          {/* ================= ส่วนค้นหาและเลือกรายวิชาแบบพิมพ์ค้นหาได้ ================= */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <label className="block text-sm font-semibold text-gray-700 ml-1">
@@ -625,85 +723,191 @@ export default function TutorDashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {selectedSubjects.map((subject, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-200/80"
-                >
-                  <div className="flex-1">
-                    <select
-                      required
-                      value={subject.subject_id}
-                      onChange={(e) =>
-                        updateSubjectRow(index, "subject_id", e.target.value)
-                      }
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900"
-                    >
-                      <option value="" disabled>
-                        -- เลือกรายวิชา --
-                      </option>
-                      {masterSubjects.map((ms) => (
-                        <option key={ms.id} value={ms.id}>
-                          {ms.name} ({ms.category || "ทั่วไป"})
-                        </option>
-                      ))}
-                    </select>
+              {selectedSubjects.map((subject, index) => {
+                const query = subject.searchText.trim().toLowerCase();
+                const filteredList = masterSubjects.filter((ms) => {
+                  const fullLabel =
+                    `${ms.code || ""} - ${ms.name}`.toLowerCase();
+                  return (
+                    (ms.code && ms.code.toLowerCase().includes(query)) ||
+                    ms.name.toLowerCase().includes(query) ||
+                    fullLabel.includes(query)
+                  );
+                });
+
+                return (
+                  <div
+                    key={index}
+                    className="flex items-start gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-200/80"
+                  >
+                    {/* ช่องพิมพ์ค้นหารหัสวิชาหรือชื่อวิชา (Combobox) */}
+                    <div className="flex-1 relative">
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={subject.searchText}
+                          onFocus={() =>
+                            updateSubjectRow(index, "isOpen", true)
+                          }
+                          onBlur={() => {
+                            setTimeout(
+                              () => updateSubjectRow(index, "isOpen", false),
+                              200,
+                            );
+                          }}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const newSubjects = [...selectedSubjects];
+                            newSubjects[index] = {
+                              ...newSubjects[index],
+                              searchText: val,
+                              subject_id: "", // รีเซ็ต ID จนกว่าจะคลิกเลือกรายการใหม่
+                              isOpen: true,
+                            };
+                            setSelectedSubjects(newSubjects);
+                          }}
+                          placeholder="พิมพ์รหัสวิชา (เช่น 069...) หรือชื่อวิชา..."
+                          className={`w-full pl-9 pr-9 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 placeholder:text-gray-400 transition-all ${
+                            subject.subject_id
+                              ? "border-emerald-400 bg-emerald-50/20 font-medium"
+                              : "border-gray-200"
+                          }`}
+                        />
+                        {subject.searchText ? (
+                          <button
+                            type="button"
+                            onClick={() => handleClearSubject(index)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                            title="ล้างข้อความ"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        )}
+                      </div>
+
+                      {/* รายการ Dropdown ที่กรองตามคำค้นหา */}
+                      {subject.isOpen && (
+                        <div className="absolute z-30 mt-1.5 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto divide-y divide-gray-50">
+                          {filteredList.length > 0 ? (
+                            filteredList.slice(0, 80).map((ms) => (
+                              <button
+                                type="button"
+                                key={ms.id}
+                                onMouseDown={(e) => {
+                                  e.preventDefault(); // ป้องกัน input เสีย focus ก่อนคลิกเสร็จ
+                                  handleSelectSubject(index, ms);
+                                }}
+                                className={`w-full text-left px-3.5 py-2.5 text-sm hover:bg-emerald-50 transition-colors flex items-center gap-2.5 ${
+                                  String(ms.id) === subject.subject_id
+                                    ? "bg-emerald-50/80 font-semibold text-emerald-900"
+                                    : "text-gray-800"
+                                }`}
+                              >
+                                <span className="font-mono text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md shrink-0">
+                                  {ms.code || "ไม่ระบุรหัส"}
+                                </span>
+                                <span className="truncate">{ms.name}</span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-sm text-gray-400 text-center">
+                              ไม่พบรายวิชาที่ค้นหา
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ช่องกรอกเกรด */}
+                    <div className="w-28 sm:w-32 shrink-0">
+                      <input
+                        type="text"
+                        required
+                        placeholder="เกรด (เช่น A)"
+                        value={subject.grade}
+                        onChange={(e) =>
+                          updateSubjectRow(index, "grade", e.target.value)
+                        }
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 placeholder:text-gray-400 uppercase"
+                      />
+                    </div>
+
+                    {selectedSubjects.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeSubjectRow(index)}
+                        className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
-                  <div className="w-32">
-                    <input
-                      type="text"
-                      required
-                      placeholder="เกรด (เช่น A)"
-                      value={subject.grade}
-                      onChange={(e) =>
-                        updateSubjectRow(index, "grade", e.target.value)
-                      }
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 placeholder:text-gray-400 uppercase"
-                    />
-                  </div>
-                  {selectedSubjects.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeSubjectRow(index)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
             <p className="text-xs text-gray-500 mt-2 ml-1">
-              * แอดมินจะตรวจสอบเกรดแต่ละวิชาจากรูป Transcript
-              ที่คุณแนบมาด้านล่าง
+              * พิมพ์รหัสวิชาหรือชื่อวิชาเพื่อค้นหา
+              แล้วคลิกเลือกรายวิชาจากรายการที่แสดงขึ้นมา
             </p>
           </div>
+          {/* ===================================================================== */}
 
           <hr className="border-gray-100" />
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
               ไฟล์ผลการเรียน (Transcript) อัปเดตล่าสุด{" "}
               <span className="text-red-500">*</span>
             </label>
+
+            <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 mb-3 text-xs md:text-sm text-emerald-950 space-y-1.5">
+              <p className="font-bold text-emerald-800 flex items-center gap-1.5">
+                📌 วิธีบันทึกไฟล์ผลการเรียนจากเว็บทะเบียน (แนะนำเป็นไฟล์ PDF):
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-emerald-800/90 ml-1">
+                <li>
+                  เข้าเว็บทะเบียน (
+                  <span className="font-mono font-medium">
+                    regis.rmutto.ac.th
+                  </span>
+                  ) ไปที่หน้าผลการเรียน แล้วกดเลือก{" "}
+                  <b>&quot;แสดงข้อมูล ทั้งหมด&quot;</b>
+                </li>
+                <li>
+                  <b>คลิกขวา</b> บริเวณตารางเกรด เลือกเมนู <b>Print (พิมพ์)</b>{" "}
+                  หรือคลิกที่ตารางแล้วกดปุ่ม <b>Ctrl + P</b>
+                </li>
+                <li>
+                  เปลี่ยนที่เก็บไฟล์เป็น <b>Save as PDF (บันทึกเป็น PDF)</b>{" "}
+                  โดยในไฟล์ต้องเห็นชื่อ-นามสกุลและเกรดครบทุกเทอม
+                </li>
+              </ol>
+            </div>
+
             <div className="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-emerald-200 border-dashed rounded-2xl hover:bg-emerald-50/30 transition-colors">
               <div className="space-y-1 text-center">
                 <UploadCloud className="mx-auto h-12 w-12 text-emerald-500" />
                 <div className="flex text-sm text-gray-600 justify-center">
                   <label className="relative cursor-pointer bg-transparent rounded-md font-semibold text-emerald-600 hover:text-emerald-700">
-                    <span>อัปโหลดไฟล์ภาพ หรือ PDF</span>
+                    <span>อัปโหลดไฟล์ PDF หรือรูปภาพ</span>
                     <input
                       type="file"
                       className="sr-only"
-                      accept="image/*,.pdf"
+                      accept=".pdf,image/*"
                       onChange={(e) => setFile(e.target.files?.[0] || null)}
                       required
                     />
                   </label>
                 </div>
+                <p className="text-xs text-gray-400">
+                  แนะนำไฟล์ .PDF เพื่อให้แอดมินตรวจสอบรายวิชาได้รวดเร็วขึ้น
+                </p>
                 {file && (
                   <p className="text-sm font-semibold text-emerald-600 mt-2">
-                    {file.name}
+                    📄 {file.name}
                   </p>
                 )}
               </div>

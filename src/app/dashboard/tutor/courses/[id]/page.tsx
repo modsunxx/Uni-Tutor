@@ -3,55 +3,34 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, BookOpen, Save, AlertCircle, Search } from "lucide-react";
+import { ArrowLeft, BookOpen, Save, AlertCircle, Lock } from "lucide-react";
 import Link from "next/link";
 
 export default function EditCoursePage() {
   const supabase = createClient();
   const router = useRouter();
-  const params = useParams(); // ดึง ID จาก URL
+  const params = useParams();
   const courseId = params.id as string;
 
-  type Subject = {
-    id: string;
-    name: string;
-    category: string;
-  };
-
-  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  // ข้อมูลวิชาและชื่อคอร์ส (แสดงผลอย่างเดียว ไม่ให้แก้ไข)
+  const [courseTitle, setCourseTitle] = useState("");
+  const [subjectDisplay, setSubjectDisplay] = useState("");
 
-  const [subjectId, setSubjectId] = useState("");
+  // ข้อมูลที่อนุญาตให้แก้ไขได้
   const [format, setFormat] = useState("Online");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchCourseData = async () => {
+      setIsLoading(true);
       try {
-        // 1. ดึงข้อมูลรายวิชาทั้งหมดมาก่อน
-        const { data: subjectsData, error: subError } = await supabase
-          .from("master_subjects")
-          .select("id, name, category")
-          .order("name", { ascending: true });
-
-        if (subError) throw subError;
-
-        let uniqueSubjects: Subject[] = [];
-        if (subjectsData) {
-          uniqueSubjects = subjectsData.filter(
-            (subject, index, self) =>
-              index === self.findIndex((t) => t.name === subject.name),
-          );
-          setSubjects(uniqueSubjects);
-        }
-
-        // 2. ดึงข้อมูลคอร์สที่ต้องการแก้ไข
+        // ดึงข้อมูลคอร์สที่ต้องการแก้ไข
         const { data: courseData, error: courseError } = await supabase
           .from("courses")
           .select("*")
@@ -61,23 +40,32 @@ export default function EditCoursePage() {
         if (courseError) throw courseError;
 
         if (courseData) {
-          setSubjectId(courseData.subject_id.toString());
-          setFormat(courseData.teaching_format);
-          setPrice(courseData.price_per_hour.toString());
+          setCourseTitle(courseData.title || "");
+          setFormat(courseData.teaching_format || "Online");
+          setPrice(courseData.price_per_hour?.toString() || "");
           setDescription(courseData.description || "");
 
-          // หาชื่อวิชามาใส่ในช่องค้นหา
-          const currentSubject = uniqueSubjects.find(
-            (s) => s.id === courseData.subject_id.toString(),
-          );
-          if (currentSubject) {
-            setSearchQuery(currentSubject.name);
-          } else {
-            setSearchQuery(courseData.title); // ถ้าหาไม่เจอ ให้ใช้ title เก่า
+          // ดึงรหัสวิชาและชื่อวิชาจากตาราง master_subjects มาแสดงผล
+          if (courseData.subject_id) {
+            const { data: subjectData } = await supabase
+              .from("master_subjects")
+              .select("code, name")
+              .eq("id", courseData.subject_id)
+              .maybeSingle();
+
+            if (subjectData) {
+              setSubjectDisplay(
+                subjectData.code
+                  ? `${subjectData.code} - ${subjectData.name}`
+                  : subjectData.name,
+              );
+            } else {
+              setSubjectDisplay(courseData.title || "");
+            }
           }
         }
       } catch (err) {
-        console.error("Error fetching data:", err);
+        console.error("Error fetching course:", err);
         setErrorMsg("ไม่สามารถโหลดข้อมูลคอร์สเรียนได้");
       } finally {
         setIsLoading(false);
@@ -85,34 +73,14 @@ export default function EditCoursePage() {
     };
 
     if (courseId) {
-      fetchData();
+      fetchCourseData();
     }
   }, [supabase, courseId]);
-
-  const filteredSubjects = subjects.filter((subject) => {
-    const searchLower = searchQuery.toLowerCase();
-    return (
-      subject.name?.toLowerCase().includes(searchLower) ||
-      subject.category?.toLowerCase().includes(searchLower)
-    );
-  });
-
-  const handleSelectSubject = (id: string, name: string) => {
-    setSubjectId(id);
-    setSearchQuery(name);
-    setIsDropdownOpen(false);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMsg("");
-
-    if (!subjectId) {
-      setErrorMsg("กรุณาค้นหาและกดเลือกวิชาจากรายการที่ปรากฏ");
-      setIsSubmitting(false);
-      return;
-    }
 
     try {
       const {
@@ -120,18 +88,16 @@ export default function EditCoursePage() {
       } = await supabase.auth.getSession();
       if (!session?.user) throw new Error("ไม่พบเซสชันการล็อกอิน");
 
-      // ใช้คำสั่ง .update() เพื่อแก้ไขข้อมูลที่มีอยู่แล้ว
+      // อัปเดตเฉพาะ รูปแบบการสอน ราคา และรายละเอียดการสอน
       const { error } = await supabase
         .from("courses")
         .update({
-          subject_id: Number(subjectId),
-          title: searchQuery,
           teaching_format: format,
           price_per_hour: parseFloat(price),
           description: description,
         })
         .eq("id", courseId)
-        .eq("tutor_id", session.user.id); // ป้องกันไม่ให้แก้คอร์สคนอื่น
+        .eq("tutor_id", session.user.id);
 
       if (error) throw error;
 
@@ -152,100 +118,88 @@ export default function EditCoursePage() {
   if (isLoading) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
+    <main className="min-h-screen bg-gray-50 pb-16">
+      {/* === Header Section (ธีมเขียว Emerald + Blobs) === */}
+      <div className="relative pt-12 pb-24 px-4 overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 rounded-b-[2.5rem] shadow-md">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-10 -right-10 w-62.5 h-62.5 bg-[#285A48] opacity-20 rounded-full"></div>
+          <div className="absolute top-10 right-40 w-37.5 h-37.5 bg-black opacity-10 rounded-full"></div>
+          <div className="absolute -bottom-20 -left-10 w-75 h-75 bg-black opacity-10 rounded-full"></div>
+          <div className="absolute top-[30%] left-16 w-37.5 h-37.5 bg-[#408A71] opacity-30 rounded-full"></div>
+        </div>
+
+        <div className="relative z-10 max-w-3xl mx-auto flex items-center gap-4 px-2">
           <Link
             href="/dashboard/tutor"
-            className="p-2 bg-white rounded-full shadow-sm hover:bg-gray-100 transition"
+            className="p-3 bg-white/15 hover:bg-white/25 text-white rounded-full backdrop-blur-sm transition-all shadow-sm"
+            title="กลับไปหน้าแดชบอร์ด"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
+            <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <BookOpen className="w-6 h-6 text-blue-600" />
+            <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-2.5 tracking-tight drop-shadow-sm">
+              <BookOpen className="w-7 h-7 text-emerald-200" />
               แก้ไขคอร์สเรียน
             </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              ปรับปรุงรายละเอียด รูปแบบการสอน หรือราคาคอร์สของคุณ
+            <p className="text-sm md:text-base text-emerald-50 font-light mt-1 drop-shadow-sm">
+              ปรับปรุงรูปแบบการสอน ราคา หรือรายละเอียดการสอนของคุณ
             </p>
           </div>
         </div>
+      </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+      {/* === Form Card === */}
+      <div className="max-w-3xl mx-auto px-4 -mt-12 relative z-20">
+        <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-8 md:p-12">
           {errorMsg && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-600">
+            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3 text-red-600">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-              <p className="text-sm">{errorMsg}</p>
+              <p className="text-sm font-medium">{errorMsg}</p>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                วิชาที่สอน <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="พิมพ์ชื่อวิชาเพื่อค้นหา..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setSubjectId("");
-                    setIsDropdownOpen(true);
-                  }}
-                  onFocus={() => setIsDropdownOpen(true)}
-                  onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
-                  className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-                <Search className="w-5 h-5 text-gray-400 absolute left-4 top-3.5" />
+            {/* 1. ข้อมูลรายวิชาและชื่อคอร์ส (ล็อกไว้ไม่ให้แก้ไข) */}
+            <div className="bg-gray-50 border border-gray-200/80 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-800 bg-emerald-100/80 px-3 py-1 rounded-full flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5" />
+                  รายวิชาและชื่อคอร์ส (ไม่สามารถแก้ไขได้)
+                </span>
               </div>
 
-              {isDropdownOpen && (
-                <ul className="absolute z-10 w-full mt-2 max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg">
-                  {filteredSubjects.length > 0 ? (
-                    filteredSubjects.map((subject) => (
-                      <li
-                        key={subject.id}
-                        onMouseDown={() =>
-                          handleSelectSubject(subject.id, subject.name)
-                        }
-                        className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0 transition-colors"
-                      >
-                        <div className="text-sm font-semibold text-gray-900">
-                          {subject.name}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          หมวดหมู่: {subject.category || "ไม่มีหมวดหมู่"}
-                        </div>
-                      </li>
-                    ))
-                  ) : (
-                    <li className="px-4 py-4 text-sm text-gray-500 text-center">
-                      ไม่พบรายวิชาที่ตรงกับ &quot;{searchQuery}&quot;
-                    </li>
-                  )}
-                </ul>
-              )}
+              <div>
+                <p className="text-lg font-bold text-gray-900">{courseTitle}</p>
+                {subjectDisplay && subjectDisplay !== courseTitle && (
+                  <p className="text-sm text-gray-600 mt-0.5">
+                    วิชา: {subjectDisplay}
+                  </p>
+                )}
+              </div>
+
+              <p className="text-xs text-gray-400">
+                * หากต้องการเปลี่ยนรายวิชาหรือชื่อคอร์ส
+                กรุณาลบคอร์สนี้ในหน้าแดชบอร์ดแล้วสร้างคอร์สใหม่
+              </p>
             </div>
 
+            {/* 2. รูปแบบการสอน & ราคาต่อชั่วโมง */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
                   รูปแบบการสอน <span className="text-red-500">*</span>
                 </label>
                 <select
                   required
                   value={format}
                   onChange={(e) => setFormat(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-gray-50/50 text-gray-900 font-medium transition-all"
                 >
                   <option value="Online">ออนไลน์ (Online)</option>
                   <option value="Onsite">เจอตัว (Onsite)</option>
@@ -254,7 +208,7 @@ export default function EditCoursePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
                   ราคาต่อชั่วโมง (บาท) <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -264,40 +218,45 @@ export default function EditCoursePage() {
                   required
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="เช่น 150"
+                  className="w-full px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-gray-50/50 text-gray-900 font-medium placeholder:text-gray-400 transition-all"
                 />
               </div>
             </div>
 
+            {/* 3. รายละเอียดการสอน */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
                 รายละเอียดการสอน (Description)
               </label>
               <textarea
                 rows={4}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                placeholder="อธิบายสไตล์การสอน สิ่งที่ผู้เรียนจะได้รับ หรือสถานที่นัดเรียน..."
+                className="w-full px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-none bg-gray-50/50 text-gray-900 placeholder:text-gray-400 transition-all"
               ></textarea>
             </div>
 
-            <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
+            {/* ปุ่มยกเลิกและบันทึก */}
+            <div className="pt-6 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-gray-100">
               <Link
                 href="/dashboard/tutor"
-                className="px-6 py-3 rounded-xl font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 transition"
+                className="px-7 py-3.5 rounded-full font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all text-center"
               >
                 ยกเลิก
               </Link>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-white bg-blue-600 hover:bg-blue-700 transition disabled:bg-blue-400"
+                className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full font-semibold text-white bg-[#1a1a1a] hover:bg-black transition-all shadow-lg active:scale-95 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   "กำลังบันทึก..."
                 ) : (
                   <>
-                    <Save className="w-5 h-5" /> บันทึกการแก้ไข
+                    <Save className="w-5 h-5" />
+                    บันทึกการแก้ไข
                   </>
                 )}
               </button>
