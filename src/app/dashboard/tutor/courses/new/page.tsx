@@ -3,7 +3,17 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Save, AlertCircle } from "lucide-react";
+import Image from "next/image";
+import {
+  ArrowLeft,
+  BookOpen,
+  Save,
+  AlertCircle,
+  ImagePlus,
+  Video,
+  Link as LinkIcon,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 
 type Subject = {
@@ -21,11 +31,24 @@ export default function NewCoursePage() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [isLoadingSubjects, setIsLoadingSubjects] = useState(true);
 
+  // ข้อมูลหลักของคอร์ส
   const [subjectId, setSubjectId] = useState("");
   const [courseTitle, setCourseTitle] = useState("");
+  const [level, setLevel] = useState("ทุกระดับ (All Levels)");
   const [format, setFormat] = useState("Online");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
+
+  // ข้อมูลรูปหน้าปก (cover_image_url) และวิดีโอตัวอย่าง (preview_video_url)
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+
+  const [videoInputType, setVideoInputType] = useState<"upload" | "link">(
+    "upload",
+  );
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoUrlInput, setVideoUrlInput] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -40,7 +63,7 @@ export default function NewCoursePage() {
 
         if (!session?.user) return;
 
-        // 1. ดึงรายการวิชาที่ติวเตอร์ได้รับอนุมัติ (ใช้ .eq("status", "approved") เพื่อให้ตรงกับ Enum)
+        // 1. ดึงรายการวิชาที่ติวเตอร์ได้รับอนุมัติ
         const { data: verifiedRows, error: verifiedError } = await supabase
           .from("tutor_verified_subjects")
           .select("subject_id, grade, status")
@@ -95,12 +118,26 @@ export default function NewCoursePage() {
 
   const handleSubjectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
+    const prevSubject = subjects.find((s) => s.id === subjectId);
     setSubjectId(selectedId);
 
     const found = subjects.find((s) => s.id === selectedId);
-    if (found && !courseTitle) {
+    if (found && (!courseTitle || courseTitle === prevSubject?.name)) {
       setCourseTitle(found.name);
     }
+  };
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleRemoveCover = () => {
+    setCoverFile(null);
+    setCoverPreview(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -123,15 +160,57 @@ export default function NewCoursePage() {
         throw new Error("ไม่พบเซสชันการล็อกอิน กรุณาเข้าสู่ระบบใหม่");
       }
 
+      const userId = session.user.id;
+      let uploadedCoverUrl: string | null = null;
+      let finalVideoUrl: string | null = null;
+
+      // 1. อัปโหลดรูปหน้าปกคอร์ส (ถ้ามี)
+      if (coverFile) {
+        const ext = coverFile.name.split(".").pop();
+        const coverPath = `covers/${userId}-${Date.now()}.${ext}`;
+        const { error: coverUploadError } = await supabase.storage
+          .from("courses")
+          .upload(coverPath, coverFile, { cacheControl: "3600", upsert: true });
+
+        if (coverUploadError) throw coverUploadError;
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("courses").getPublicUrl(coverPath);
+        uploadedCoverUrl = publicUrl;
+      }
+
+      // 2. จัดการวิดีโอตัวอย่าง (อัปโหลดไฟล์ หรือ ใช้ลิงก์)
+      if (videoInputType === "upload" && videoFile) {
+        const ext = videoFile.name.split(".").pop();
+        const videoPath = `videos/${userId}-${Date.now()}.${ext}`;
+        const { error: videoUploadError } = await supabase.storage
+          .from("courses")
+          .upload(videoPath, videoFile, { cacheControl: "3600", upsert: true });
+
+        if (videoUploadError) throw videoUploadError;
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("courses").getPublicUrl(videoPath);
+        finalVideoUrl = publicUrl;
+      } else if (videoInputType === "link" && videoUrlInput.trim()) {
+        finalVideoUrl = videoUrlInput.trim();
+      }
+
       const selectedSubject = subjects.find((s) => s.id === subjectId);
 
+      // 3. บันทึกข้อมูลคอร์สเรียนลงตาราง courses
       const { error } = await supabase.from("courses").insert({
-        tutor_id: session.user.id,
+        tutor_id: userId,
         subject_id: Number(subjectId),
         title: courseTitle.trim() || selectedSubject?.name || "",
+        level: level,
         teaching_format: format,
         price_per_hour: parseFloat(price),
         description: description,
+        cover_image_url: uploadedCoverUrl,
+        preview_video_url: finalVideoUrl,
       });
 
       if (error) throw error;
@@ -209,7 +288,7 @@ export default function NewCoursePage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* 1. เลือกวิชาแบบ Dropdown กดเลือกได้เลยไม่ต้องพิมพ์เอง */}
+            {/* 1. เลือกวิชาที่เปิดสอน */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
                 วิชาที่เปิดสอน (เฉพาะวิชาที่ได้รับอนุมัติ){" "}
@@ -252,8 +331,31 @@ export default function NewCoursePage() {
               />
             </div>
 
-            {/* 3. รูปแบบการสอน & ราคา */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 3. ระดับเนื้อหา (Level), รูปแบบการสอน & ราคา */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
+                  ระดับเนื้อหา (Level) <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value)}
+                  className="w-full px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-gray-50/50 text-gray-900 transition-all"
+                >
+                  <option value="ทุกระดับ (All Levels)">
+                    ทุกระดับ (All Levels)
+                  </option>
+                  <option value="ปูพื้นฐาน (Beginner)">
+                    ปูพื้นฐาน (Beginner)
+                  </option>
+                  <option value="ติวสอบ (Midterm/Final)">
+                    ติวสอบ (Midterm/Final)
+                  </option>
+                  <option value="เจาะลึก (Advanced)">เจาะลึก (Advanced)</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
                   รูปแบบการสอน <span className="text-red-500">*</span>
@@ -299,6 +401,144 @@ export default function NewCoursePage() {
                 placeholder="อธิบายสไตล์การสอน สิ่งที่ผู้เรียนจะได้รับ หรือสถานที่นัดเรียน..."
                 className="w-full px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-none bg-gray-50/50 text-gray-900 placeholder:text-gray-400 transition-all"
               ></textarea>
+            </div>
+
+            <hr className="border-gray-100" />
+
+            {/* 5. อัปโหลดรูปหน้าปกคอร์ส (cover_image_url) และวิดีโอตัวอย่าง (preview_video_url) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* รูปหน้าปกคอร์ส */}
+              <div>
+                <div className="mb-2 ml-1">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    รูปหน้าปกคอร์ส (Cover Image)
+                  </label>
+                  <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                    แนะนำอัตราส่วน 16:9 (ขนาด 1280×720 px ขึ้นไป)
+                  </p>
+                </div>
+                {coverPreview ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-emerald-200 h-44 bg-gray-50">
+                    <Image
+                      src={coverPreview}
+                      alt="Course Cover Preview"
+                      fill
+                      unoptimized
+                      className="object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRemoveCover}
+                      className="absolute top-2.5 right-2.5 p-1.5 bg-black/70 text-white rounded-full hover:bg-red-600 transition-colors"
+                      title="ลบรูปหน้าปก"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center h-44 border-2 border-emerald-200 border-dashed rounded-2xl cursor-pointer hover:bg-emerald-50/40 transition-colors p-4 text-center">
+                    <ImagePlus className="w-9 h-9 text-emerald-500 mb-2" />
+                    <span className="text-sm font-semibold text-emerald-700">
+                      คลิกเพื่ออัปโหลดรูปหน้าปก
+                    </span>
+                    <span className="text-xs text-gray-500 mt-1">
+                      สัดส่วน 16:9 แนวนอน (1280×720 px)
+                    </span>
+                    <span className="text-[11px] text-gray-400 mt-0.5">
+                      รองรับไฟล์ JPG, PNG ขนาดไม่เกิน 5 MB (ไม่บังคับ)
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCoverChange}
+                      className="sr-only"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* วิดีโอตัวอย่าง */}
+              <div>
+                <div className="flex items-start justify-between mb-2 ml-1 gap-2">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700">
+                      วิดีโอแนะนำคอร์ส (Preview Video)
+                    </label>
+                    <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                      แนะนำอัตราส่วน 16:9 ความละเอียด 720p / 1080p
+                    </p>
+                  </div>
+                  <div className="flex bg-gray-100 p-0.5 rounded-lg text-xs shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setVideoInputType("upload")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                        videoInputType === "upload"
+                          ? "bg-white text-emerald-700 shadow-xs"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      อัปโหลดไฟล์
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVideoInputType("link")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                        videoInputType === "link"
+                          ? "bg-white text-emerald-700 shadow-xs"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      วางลิงก์
+                    </button>
+                  </div>
+                </div>
+
+                {videoInputType === "upload" ? (
+                  <label className="flex flex-col items-center justify-center h-44 border-2 border-emerald-200 border-dashed rounded-2xl cursor-pointer hover:bg-emerald-50/40 transition-colors p-4 text-center">
+                    <Video className="w-9 h-9 text-emerald-500 mb-2" />
+                    <span className="text-sm font-semibold text-emerald-700">
+                      คลิกเพื่อเลือกไฟล์วิดีโอสั้นๆ
+                    </span>
+                    <span className="text-xs text-gray-500 mt-1">
+                      สัดส่วน 16:9 แนวนอน (720p หรือ 1080p)
+                    </span>
+                    <span className="text-[11px] text-gray-400 mt-0.5">
+                      รองรับไฟล์ MP4, WebM ขนาดไม่เกิน 50 MB (ไม่บังคับ)
+                    </span>
+                    {videoFile && (
+                      <span className="mt-2 text-xs font-semibold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full truncate max-w-full">
+                        🎬 {videoFile.name}
+                      </span>
+                    )}
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) =>
+                        setVideoFile(e.target.files?.[0] || null)
+                      }
+                      className="sr-only"
+                    />
+                  </label>
+                ) : (
+                  <div className="h-44 flex flex-col justify-center bg-gray-50/70 border border-gray-200 rounded-2xl p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-emerald-700 text-xs font-semibold">
+                      <LinkIcon className="w-4 h-4" />
+                      ลิงก์วิดีโอแนะนำการสอน (16:9, 720p/1080p)
+                    </div>
+                    <input
+                      type="url"
+                      value={videoUrlInput}
+                      onChange={(e) => setVideoUrlInput(e.target.value)}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      className="w-full px-3.5 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 placeholder:text-gray-400"
+                    />
+                    <p className="text-[11px] text-gray-400">
+                      * แนะนำวิดีโอแนวนอน (16:9) ความยาวประมาณ 1–3 นาที
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* ปุ่มบันทึกและยกเลิก */}

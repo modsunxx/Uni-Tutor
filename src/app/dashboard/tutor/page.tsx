@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { User } from "@supabase/supabase-js";
+import Image from "next/image";
 import {
   BookOpen,
   PlusCircle,
@@ -20,6 +21,7 @@ import {
   Search,
   ChevronDown,
   X,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -40,9 +42,12 @@ type SelectedSubject = {
 type Course = {
   id: string;
   title: string;
+  level: string | null;
   teaching_format: string;
   price_per_hour: number;
   description: string;
+  cover_image_url: string | null;
+  preview_video_url: string | null;
   status: string;
 };
 
@@ -526,6 +531,7 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
+          {/* === จัดการคอร์สเรียน (เพิ่มส่วนแสดงรูปหน้าปก 16:9 และป้าย Level) === */}
           <div>
             <div className="flex items-center justify-between mb-6 mt-4 px-2">
               <h3 className="text-xl font-bold text-gray-900">
@@ -538,44 +544,80 @@ export default function TutorDashboardPage() {
                 {courses.map((course) => (
                   <div
                     key={course.id}
-                    className="bg-white rounded-4xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 p-6 flex flex-col relative overflow-hidden group"
+                    className="bg-white rounded-4xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col relative overflow-hidden group"
                   >
-                    <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
-                    <div className="flex justify-between items-start mb-4">
-                      <span className="inline-block px-3.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full">
-                        {course.teaching_format}
-                      </span>
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 z-10"></div>
 
-                      <div className="flex items-center gap-3">
-                        <Link
-                          href={`/dashboard/tutor/courses/${course.id}`}
-                          className="text-gray-400 hover:text-emerald-600 transition"
-                        >
-                          <Edit className="w-5 h-5" />
-                        </Link>
-                        <button
-                          onClick={() => handleDeleteCourse(course.id)}
-                          className="text-gray-400 hover:text-red-500 transition"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
+                    {/* ส่วนแสดงรูปหน้าปกคอร์ส (สัดส่วน 16:9) */}
+                    <div className="relative aspect-video w-full bg-linear-to-br from-emerald-50 via-teal-50 to-emerald-100/70 overflow-hidden border-b border-gray-100">
+                      {course.cover_image_url ? (
+                        <Image
+                          src={course.cover_image_url}
+                          alt={course.title}
+                          fill
+                          unoptimized
+                          className="object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-emerald-600/40">
+                          <BookOpen className="w-10 h-10 mb-1 stroke-[1.5]" />
+                          <span className="text-[11px] font-semibold uppercase tracking-wider">
+                            ไม่มีรูปหน้าปก
+                          </span>
+                        </div>
+                      )}
+
+                      {/* ป้ายระดับเนื้อหา (Level) มุมขวาล่างของรูป */}
+                      {course.level && (
+                        <div className="absolute bottom-3 right-3">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-black/70 text-white backdrop-blur-xs">
+                            <Sparkles className="w-3 h-3 text-emerald-300" />
+                            {course.level}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2">
-                      {course.title}
-                    </h3>
-
-                    <p className="text-gray-500 text-sm mb-4 line-clamp-2 grow">
-                      {course.description || "ไม่มีคำอธิบายเพิ่มเติม"}
-                    </p>
-
-                    <div className="pt-4 border-t border-gray-50 flex items-center justify-between">
-                      <div className="text-emerald-600 font-bold text-lg">
-                        ฿{course.price_per_hour}{" "}
-                        <span className="text-gray-400 text-sm font-normal">
-                          / ชม.
+                    {/* รายละเอียดคอร์ส */}
+                    <div className="p-6 flex-1 flex flex-col">
+                      <div className="flex justify-between items-start mb-4">
+                        <span className="inline-block px-3.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full">
+                          {course.teaching_format}
                         </span>
+
+                        <div className="flex items-center gap-3">
+                          <Link
+                            href={`/dashboard/tutor/courses/${course.id}`}
+                            className="text-gray-400 hover:text-emerald-600 transition"
+                            title="แก้ไขคอร์สเรียน"
+                          >
+                            <Edit className="w-5 h-5" />
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteCourse(course.id)}
+                            className="text-gray-400 hover:text-red-500 transition"
+                            title="ลบคอร์สเรียน"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2">
+                        {course.title}
+                      </h3>
+
+                      <p className="text-gray-500 text-sm mb-4 line-clamp-2 grow">
+                        {course.description || "ไม่มีคำอธิบายเพิ่มเติม"}
+                      </p>
+
+                      <div className="pt-4 border-t border-gray-50 flex items-center justify-between">
+                        <div className="text-emerald-600 font-bold text-lg">
+                          ฿{course.price_per_hour}{" "}
+                          <span className="text-gray-400 text-sm font-normal">
+                            / ชม.
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

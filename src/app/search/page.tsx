@@ -2,24 +2,35 @@
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Search, BookOpen, User, MapPin, MonitorPlay } from "lucide-react";
+import Image from "next/image";
+import {
+  Search,
+  BookOpen,
+  User,
+  MapPin,
+  MonitorPlay,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 
-// กำหนด Type ป้องกันการใช้ any ตามมาตรฐาน TypeScript (Strict Mode)
 type Course = {
   id: string;
   title: string;
+  level: string | null;
   price_per_hour: number;
-  teaching_format: "online" | "onsite" | "hybrid";
+  teaching_format: string;
+  cover_image_url: string | null;
   master_subjects: {
+    code?: string;
     name: string;
-    category: string;
+    category: string | null;
   } | null;
   tutor_profiles: {
     users: {
       first_name: string;
       last_name: string;
       nickname: string | null;
+      profile_image_url?: string | null;
     } | null;
   } | null;
 };
@@ -38,11 +49,13 @@ export default function SearchPage() {
         const { data, error } = await supabase.from("courses").select(`
             id,
             title,
+            level,
             price_per_hour,
             teaching_format,
-            master_subjects ( name, category ),
+            cover_image_url,
+            master_subjects ( code, name, category ),
             tutor_profiles (
-              users ( first_name, last_name, nickname )
+              users ( first_name, last_name, nickname, profile_image_url )
             )
           `);
 
@@ -64,20 +77,28 @@ export default function SearchPage() {
   }, [supabase]);
 
   const filteredCourses = courses.filter((course) => {
-    const titleMatch = course.title
-      ?.toLowerCase()
-      .includes(searchQuery.toLowerCase());
+    const query = searchQuery.toLowerCase().trim();
+    const titleMatch = course.title?.toLowerCase().includes(query);
     const subjectMatch = course.master_subjects?.name
       ?.toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    return titleMatch || subjectMatch;
+      .includes(query);
+    const codeMatch = course.master_subjects?.code
+      ?.toLowerCase()
+      .includes(query);
+    const tutorFirst = course.tutor_profiles?.users?.first_name
+      ?.toLowerCase()
+      .includes(query);
+    const tutorNick = course.tutor_profiles?.users?.nickname
+      ?.toLowerCase()
+      .includes(query);
+
+    return titleMatch || subjectMatch || codeMatch || tutorFirst || tutorNick;
   });
 
   return (
     <main className="min-h-screen bg-gray-50 pb-12">
-      {/* === Header & Search Section แบบใหม่ (ธีมเขียว Figma) === */}
+      {/* === Header & Search Section (ธีมเขียว Figma) === */}
       <div className="relative pt-16 pb-28 px-4 overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 rounded-b-[2.5rem] shadow-md">
-        {/* กลุ่มวงกลมตกแต่ง (Blobs) สำหรับ Header */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-10 -right-10 w-62.5 h-62.5 bg-[#285A48] opacity-20 rounded-full"></div>
           <div className="absolute top-10 right-40 w-37.5 h-37.5 bg-black opacity-10 rounded-full"></div>
@@ -86,7 +107,6 @@ export default function SearchPage() {
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto">
-          {/* ข้อมูลโลโก้คณะ (ย้ายมาจัดชิดซ้ายให้เหมือน Figma) */}
           <div className="mb-8 text-white px-2">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-3xl font-bold tracking-tight drop-shadow-sm">
@@ -101,17 +121,16 @@ export default function SearchPage() {
             </div>
             <input
               type="text"
-              className="block w-full pl-14 pr-6 py-4 rounded-full border-0 focus:ring-4 focus:ring-emerald-500/30 shadow-2xl outline-none text-gray-900 font-medium transition-all"
-              placeholder="ค้นหารายวิชา / รุ่นพี่ / ติวเตอร์..."
+              className="block w-full pl-14 pr-6 py-4 rounded-full border-0 bg-white focus:ring-4 focus:ring-emerald-500/30 shadow-2xl outline-none text-gray-900 placeholder:text-gray-400 font-medium transition-all"
+              placeholder="ค้นหารายวิชา / รหัสวิชา / รุ่นพี่ / ติวเตอร์..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
         </div>
       </div>
-      {/* ======================================================== */}
 
-      {/* Course Gallery Section */}
+      {/* === Course Gallery Section === */}
       <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-20">
         {errorMsg && (
           <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center mb-8 shadow-sm border border-red-100">
@@ -124,7 +143,7 @@ export default function SearchPage() {
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
                 key={i}
-                className="bg-white h-64 rounded-4xl animate-pulse shadow-sm border border-gray-100"
+                className="bg-white h-80 rounded-4xl animate-pulse shadow-sm border border-gray-100"
               ></div>
             ))}
           </div>
@@ -136,6 +155,12 @@ export default function SearchPage() {
                 : course.tutor_profiles?.users?.first_name ||
                   "ไม่ระบุชื่อติวเตอร์";
 
+              const tutorAvatar =
+                course.tutor_profiles?.users?.profile_image_url;
+
+              const formatClean =
+                course.teaching_format?.trim().toLowerCase() || "";
+
               return (
                 <Link
                   href={`/courses/${course.id}`}
@@ -143,38 +168,84 @@ export default function SearchPage() {
                   className="group block"
                 >
                   <div className="bg-white rounded-4xl shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-100 overflow-hidden flex flex-col h-full">
-                    {/* Card Header */}
-                    <div className="p-6 border-b border-gray-50 flex justify-between items-start">
-                      <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">
-                        <BookOpen className="w-3.5 h-3.5" />
-                        {course.master_subjects?.category || "ทั่วไป"}
-                      </span>
-                      <span className="text-xl font-bold text-emerald-600">
-                        ฿{course.price_per_hour}
-                        <span className="text-sm font-medium text-gray-400">
-                          /ชม.
+                    {/* === ส่วนรูปหน้าปกคอร์ส (16:9) === */}
+                    <div className="relative aspect-video w-full bg-linear-to-br from-emerald-50 via-teal-50 to-emerald-100/70 overflow-hidden border-b border-gray-50">
+                      {course.cover_image_url ? (
+                        <Image
+                          src={course.cover_image_url}
+                          alt={course.title}
+                          fill
+                          unoptimized
+                          className="object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-emerald-600/40">
+                          <BookOpen className="w-12 h-12 mb-1 stroke-[1.5]" />
+                          <span className="text-xs font-semibold tracking-wide uppercase">
+                            UniTutor Course
+                          </span>
+                        </div>
+                      )}
+
+                      {/* ป้ายรหัสวิชา / หมวดหมู่ มุมซ้ายบน */}
+                      <div className="absolute top-3.5 left-3.5 flex flex-wrap gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-white/95 text-emerald-800 backdrop-blur-xs shadow-xs">
+                          <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+                          {course.master_subjects?.code ||
+                            course.master_subjects?.category ||
+                            "ทั่วไป"}
                         </span>
-                      </span>
+                      </div>
+
+                      {/* ป้ายระดับเนื้อหา (Level) มุมขวาล่างของรูป */}
+                      {course.level && (
+                        <div className="absolute bottom-3 right-3">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-black/70 text-white backdrop-blur-xs">
+                            <Sparkles className="w-3 h-3 text-emerald-300" />
+                            {course.level}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Card Body */}
+                    {/* === Card Body === */}
                     <div className="p-6 flex-1 flex flex-col">
-                      <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-emerald-600 transition-colors line-clamp-2">
-                        {course.title}
-                      </h3>
-                      <p className="text-sm text-gray-500 mb-6 font-medium">
+                      <div className="flex justify-between items-start gap-3 mb-2">
+                        <h3 className="text-lg font-bold text-gray-900 group-hover:text-emerald-600 transition-colors line-clamp-2 flex-1">
+                          {course.title}
+                        </h3>
+                        <span className="text-xl font-bold text-emerald-600 shrink-0">
+                          ฿{course.price_per_hour}
+                          <span className="text-xs font-medium text-gray-400">
+                            /ชม.
+                          </span>
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-gray-500 mb-5 font-medium">
                         วิชา:{" "}
                         <span className="text-gray-700">
                           {course.master_subjects?.name || "ไม่ระบุวิชา"}
                         </span>
                       </p>
 
-                      <div className="mt-auto space-y-3 bg-gray-50 p-4 rounded-2xl">
+                      <div className="mt-auto space-y-2.5 bg-gray-50 p-4 rounded-2xl">
                         <div className="flex items-center gap-3 text-sm text-gray-700">
-                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm">
-                            <User className="w-4 h-4 text-emerald-600" />
-                          </div>
-                          <span>
+                          {tutorAvatar ? (
+                            <Image
+                              src={tutorAvatar}
+                              alt={tutorName}
+                              width={32}
+                              height={32}
+                              unoptimized
+                              className="w-8 h-8 rounded-full object-cover border border-emerald-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs shrink-0">
+                              <User className="w-4 h-4 text-emerald-600" />
+                            </div>
+                          )}
+                          <span className="truncate">
                             สอนโดย{" "}
                             <span className="font-bold text-gray-900">
                               {tutorName}
@@ -182,20 +253,20 @@ export default function SearchPage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-3 text-sm text-gray-700">
-                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm">
-                            {course.teaching_format === "online" ? (
+                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs shrink-0">
+                            {formatClean === "online" ? (
                               <MonitorPlay className="w-4 h-4 text-emerald-600" />
                             ) : (
                               <MapPin className="w-4 h-4 text-emerald-600" />
                             )}
                           </div>
-                          <span className="capitalize font-medium">
+                          <span className="font-medium">
                             รูปแบบ:{" "}
-                            <span className="text-gray-900">
-                              {course.teaching_format === "online"
-                                ? "ออนไลน์"
-                                : course.teaching_format === "onsite"
-                                  ? "ออนไซต์"
+                            <span className="text-gray-900 font-semibold">
+                              {formatClean === "online"
+                                ? "ออนไลน์ (Online)"
+                                : formatClean === "onsite"
+                                  ? "เจอตัว (Onsite)"
                                   : "ผสมผสาน (Hybrid)"}
                             </span>
                           </span>
