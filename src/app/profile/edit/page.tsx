@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Image from "next/image";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   Camera,
   Save,
@@ -11,6 +11,8 @@ import {
   User as UserIcon,
   CheckCircle2,
   AlertCircle,
+  Landmark,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -23,6 +25,7 @@ export default function EditProfilePage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // ข้อมูลตาราง users
   const [userId, setUserId] = useState("");
   const [email, setEmail] = useState("");
   const [studentId, setStudentId] = useState("");
@@ -33,6 +36,14 @@ export default function EditProfilePage() {
   const [lineId, setLineId] = useState("");
   const [bio, setBio] = useState("");
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+
+  // ข้อมูลตาราง tutor_profiles (สำหรับติวเตอร์)
+  const [hasTutorProfile, setHasTutorProfile] = useState(false);
+  const [headline, setHeadline] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+  const [promptpay, setPromptpay] = useState("");
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -53,6 +64,7 @@ export default function EditProfilePage() {
         setUserId(session.user.id);
         setEmail(session.user.email || "");
 
+        // 1. ดึงข้อมูลจากตาราง users
         const { data: userData, error } = await supabase
           .from("users")
           .select("*")
@@ -70,6 +82,29 @@ export default function EditProfilePage() {
           setLineId(userData.line_id || "");
           setBio(userData.bio || "");
           setProfileImageUrl(userData.profile_image_url || null);
+        }
+
+        // 2. ดึงข้อมูลจากตาราง tutor_profiles (ถ้าผู้ใช้เป็นติวเตอร์หรือเคยสมัครติวเตอร์)
+        const { data: tutorData } = await supabase
+          .from("tutor_profiles")
+          .select(
+            "headline, bio, bank_name, bank_account, promptpay, verified_at",
+          )
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        if (tutorData || userData?.role?.toLowerCase() === "tutor") {
+          setHasTutorProfile(true);
+          if (tutorData) {
+            setHeadline(tutorData.headline || "");
+            setBankName(tutorData.bank_name || "");
+            setBankAccount(tutorData.bank_account || "");
+            setPromptpay(tutorData.promptpay || "");
+            setVerifiedAt(tutorData.verified_at || null);
+            if (!userData?.bio && tutorData.bio) {
+              setBio(tutorData.bio);
+            }
+          }
         }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -101,7 +136,7 @@ export default function EditProfilePage() {
     try {
       let finalImageUrl = profileImageUrl;
 
-      // 1. ถ้ามีการเลือกรูปใหม่ ให้อัปโหลดขึ้น Supabase Storage (Bucket: avatars)
+      // 1. อัปโหลดรูปโปรไฟล์ใหม่ (ถ้ามี)
       if (imageFile) {
         const fileExt = imageFile.name.split(".").pop();
         const fileName = `${userId}-${Date.now()}.${fileExt}`;
@@ -133,14 +168,24 @@ export default function EditProfilePage() {
 
       if (updateError) throw updateError;
 
-      // 3. ซิงค์ข้อมูล bio ไปยังตาราง tutor_profiles ด้วย (กรณีเป็นติวเตอร์)
-      await supabase
-        .from("tutor_profiles")
-        .update({ bio: bio.trim() || null })
-        .eq("id", userId);
+      // 3. อัปเดตข้อมูลคำโปรยและบัญชีรับเงินลงตาราง tutor_profiles (กรณีเป็นติวเตอร์)
+      if (hasTutorProfile) {
+        const { error: tutorUpdateError } = await supabase
+          .from("tutor_profiles")
+          .update({
+            headline: headline.trim() || null,
+            bio: bio.trim() || null,
+            bank_name: bankName || null,
+            bank_account: bankAccount.trim() || null,
+            promptpay: promptpay.trim() || null,
+          })
+          .eq("id", userId);
+
+        if (tutorUpdateError) throw tutorUpdateError;
+      }
 
       setProfileImageUrl(finalImageUrl);
-      setSuccessMsg("บันทึกข้อมูลโปรไฟล์เรียบร้อยแล้ว!");
+      setSuccessMsg("บันทึกข้อมูลโปรไฟล์และบัญชีรับเงินเรียบร้อยแล้ว!");
       router.refresh();
     } catch (err) {
       console.error("Error updating profile:", err);
@@ -165,7 +210,7 @@ export default function EditProfilePage() {
 
   return (
     <main className="min-h-screen bg-gray-50 pb-16">
-      {/* === Header Section (ธีมเขียว Emerald + Blobs) === */}
+      {/* === Header Section === */}
       <div className="relative pt-12 pb-24 px-4 overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 rounded-b-[2.5rem] shadow-md">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-10 -right-10 w-62.5 h-62.5 bg-[#285A48] opacity-20 rounded-full"></div>
@@ -188,7 +233,7 @@ export default function EditProfilePage() {
               แก้ไขโปรไฟล์ส่วนตัว
             </h1>
             <p className="text-sm md:text-base text-emerald-50 font-light mt-1 drop-shadow-sm">
-              อัปเดตรูปโปรไฟล์ แนะนำตัว และช่องทางติดต่อของคุณ
+              อัปเดตรูปโปรไฟล์ แนะนำตัว และช่องทางรับเงินของคุณ
             </p>
           </div>
         </div>
@@ -196,7 +241,7 @@ export default function EditProfilePage() {
 
       {/* === Form Card === */}
       <div className="max-w-2xl mx-auto px-4 -mt-12 relative z-20">
-        <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-8 md:p-12">
+        <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-6 sm:p-10 md:p-12">
           {errorMsg && (
             <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3 text-red-600">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -250,7 +295,7 @@ export default function EditProfilePage() {
               </p>
             </div>
 
-            {/* ข้อมูลที่ล็อกไว้ (ชื่อ-นามสกุล, รหัสนักศึกษา, อีเมล) */}
+            {/* ข้อมูลพื้นฐานที่ล็อกไว้ */}
             <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div>
                 <span className="text-xs text-gray-400 block">
@@ -268,11 +313,19 @@ export default function EditProfilePage() {
                   {studentId || "-"}
                 </span>
               </div>
-              <div className="sm:col-span-2">
-                <span className="text-xs text-gray-400 block">
-                  อีเมลมหาวิทยาลัย
-                </span>
-                <span className="font-medium text-emerald-700">{email}</span>
+              <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs text-gray-400 block">
+                    อีเมลมหาวิทยาลัย
+                  </span>
+                  <span className="font-medium text-emerald-700">{email}</span>
+                </div>
+                {verifiedAt && (
+                  <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">
+                    ✓ อนุมัติเป็นติวเตอร์เมื่อ{" "}
+                    {new Date(verifiedAt).toLocaleDateString("th-TH")}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -318,6 +371,23 @@ export default function EditProfilePage() {
               </div>
             </div>
 
+            {/* ช่องแก้ไขคำโปรย (Headline - เฉพาะติวเตอร์) */}
+            {hasTutorProfile && (
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5 ml-1">
+                  <Sparkles className="w-4 h-4 text-emerald-600" />
+                  คำโปรยสั้นๆ ประจำตัวติวเตอร์ (Headline)
+                </label>
+                <input
+                  type="text"
+                  value={headline}
+                  onChange={(e) => setHeadline(e.target.value)}
+                  placeholder="เช่น ติวเตอร์สายลุยโจทย์ Java & Figma สอนเข้าใจง่ายจากศูนย์"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-gray-50/50 text-gray-900 placeholder:text-gray-400 transition-all"
+                />
+              </div>
+            )}
+
             {/* ช่องแก้ไขประวัติแนะนำตัว (Bio) */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
@@ -332,8 +402,82 @@ export default function EditProfilePage() {
               ></textarea>
             </div>
 
+            {/* === ส่วนข้อมูลบัญชีรับเงินสำหรับติวเตอร์ (Admin โอนเงินค่าสอนหลังหัก %) === */}
+            {hasTutorProfile && (
+              <div className="pt-4 border-t border-gray-100">
+                <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-3xl p-5 sm:p-6 space-y-4">
+                  <div>
+                    <h3 className="text-base font-bold text-emerald-950 flex items-center gap-2">
+                      <Landmark className="w-5 h-5 text-emerald-600" />
+                      บัญชีรับเงินค่าสอน (สำหรับติวเตอร์)
+                    </h3>
+                    <p className="text-xs text-emerald-800/80 mt-1">
+                      ใช้สำหรับให้แอดมินโอนเงินค่าสอนให้คุณหลังจากหักค่าธรรมเนียมแพลตฟอร์มเรียบร้อยแล้ว
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-emerald-950 mb-1.5 ml-1">
+                        ธนาคาร (Bank Name)
+                      </label>
+                      <select
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        className="w-full px-3.5 py-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900"
+                      >
+                        <option value="">-- เลือกธนาคาร --</option>
+                        <option value="กสิกรไทย (KBANK)">
+                          กสิกรไทย (KBANK)
+                        </option>
+                        <option value="ไทยพาณิชย์ (SCB)">
+                          ไทยพาณิชย์ (SCB)
+                        </option>
+                        <option value="กรุงไทย (KTB)">กรุงไทย (KTB)</option>
+                        <option value="กรุงเทพ (BBL)">กรุงเทพ (BBL)</option>
+                        <option value="กรุงศรีอยุธยา (BAY)">
+                          กรุงศรีอยุธยา (BAY)
+                        </option>
+                        <option value="ทหารไทยธนชาต (ttb)">
+                          ทหารไทยธนชาต (ttb)
+                        </option>
+                        <option value="ออมสิน (GSB)">ออมสิน (GSB)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-emerald-950 mb-1.5 ml-1">
+                        เลขที่บัญชีธนาคาร (Bank Account)
+                      </label>
+                      <input
+                        type="text"
+                        value={bankAccount}
+                        onChange={(e) => setBankAccount(e.target.value)}
+                        placeholder="เช่น 123-4-56789-0"
+                        className="w-full px-3.5 py-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 placeholder:text-gray-400"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-emerald-950 mb-1.5 ml-1">
+                        หมายเลขพร้อมเพย์ (PromptPay - เบอร์โทรศัพท์ หรือ
+                        เลขบัตรประชาชน)
+                      </label>
+                      <input
+                        type="text"
+                        value={promptpay}
+                        onChange={(e) => setPromptpay(e.target.value)}
+                        placeholder="เช่น 08X-XXX-XXXX"
+                        className="w-full px-3.5 py-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm text-gray-900 placeholder:text-gray-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ปุ่มบันทึก */}
-            <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
+            <div className="pt-4 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-gray-100">
               <Link
                 href="/search"
                 className="px-6 py-3.5 rounded-full font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all text-center"

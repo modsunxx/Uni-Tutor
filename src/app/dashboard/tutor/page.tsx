@@ -51,6 +51,14 @@ type Course = {
   status: string;
 };
 
+type AvailabilitySlot = {
+  id: number;
+  tutor_id: string;
+  start_at: string;
+  end_at: string;
+  is_booked: boolean;
+};
+
 export default function TutorDashboardPage() {
   const supabase = createClient();
   const [user, setUser] = useState<User | null>(null);
@@ -65,6 +73,13 @@ export default function TutorDashboardPage() {
   const [lastName, setLastName] = useState("");
 
   const [courses, setCourses] = useState<Course[]>([]);
+
+  // ข้อมูลเวลาว่างเปิดสอนจากตาราง availability
+  const [availabilities, setAvailabilities] = useState<AvailabilitySlot[]>([]);
+  const [slotDate, setSlotDate] = useState("");
+  const [slotStartTime, setSlotStartTime] = useState("13:00");
+  const [slotEndTime, setSlotEndTime] = useState("15:00");
+  const [isAddingSlot, setIsAddingSlot] = useState(false);
 
   const [stats, setStats] = useState({
     revenue: 0,
@@ -135,6 +150,17 @@ export default function TutorDashboardPage() {
 
               if (coursesError) throw coursesError;
               if (coursesData) setCourses(coursesData);
+
+              // ดึงตารางเวลาว่างของติวเตอร์จากตาราง availability
+              const { data: availData } = await supabase
+                .from("availability")
+                .select("*")
+                .eq("tutor_id", session.user.id)
+                .order("start_at", { ascending: true });
+
+              if (availData) {
+                setAvailabilities(availData as AvailabilitySlot[]);
+              }
             } else {
               setIsPending(true);
             }
@@ -179,6 +205,62 @@ export default function TutorDashboardPage() {
     } catch (err) {
       console.error("Error deleting course:", err);
       alert("เกิดข้อผิดพลาด ไม่สามารถลบคอร์สเรียนได้");
+    }
+  };
+
+  const handleAddAvailability = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !slotDate || !slotStartTime || !slotEndTime) return;
+
+    const startIso = new Date(`${slotDate}T${slotStartTime}:00`).toISOString();
+    const endIso = new Date(`${slotDate}T${slotEndTime}:00`).toISOString();
+
+    if (new Date(endIso) <= new Date(startIso)) {
+      alert("เวลาสิ้นสุดต้องมากกว่าเวลาเริ่มต้นครับ");
+      return;
+    }
+
+    setIsAddingSlot(true);
+    try {
+      const { data, error } = await supabase
+        .from("availability")
+        .insert({
+          tutor_id: user.id,
+          start_at: startIso,
+          end_at: endIso,
+          is_booked: false,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        setAvailabilities((prev) =>
+          [...prev, data as AvailabilitySlot].sort(
+            (a, b) =>
+              new Date(a.start_at).getTime() - new Date(b.start_at).getTime(),
+          ),
+        );
+      }
+    } catch (err) {
+      console.error("Error adding availability:", err);
+      alert("ไม่สามารถเพิ่มเวลาว่างได้ กรุณาตรวจสอบสิทธิ์ตาราง availability");
+    } finally {
+      setIsAddingSlot(false);
+    }
+  };
+
+  const handleDeleteAvailability = async (slotId: number) => {
+    try {
+      const { error } = await supabase
+        .from("availability")
+        .delete()
+        .eq("id", slotId);
+      if (error) throw error;
+      setAvailabilities((prev) => prev.filter((s) => s.id !== slotId));
+    } catch (err) {
+      console.error("Error deleting availability:", err);
+      alert("ไม่สามารถลบช่วงเวลานี้ได้");
     }
   };
 
@@ -529,6 +611,129 @@ export default function TutorDashboardPage() {
                 <p className="text-sm">ยังไม่มีความเคลื่อนไหวใหม่</p>
               </div>
             </div>
+          </div>
+
+          {/* === ส่วนจัดการเวลาว่างของติวเตอร์ (Availability) === */}
+          <div className="bg-white p-6 sm:p-8 rounded-4xl border border-gray-100 shadow-sm space-y-6">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-600" />
+                จัดการเวลาว่างเปิดสอน (Availability)
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                เพิ่มวันและเวลาที่คุณสะดวกสอน เพื่อให้นักศึกษาเลือกกดจองเรียนในหน้าคอร์สของคุณ
+              </p>
+            </div>
+
+            <form
+              onSubmit={handleAddAvailability}
+              className="grid grid-cols-1 sm:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 items-end"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  วันที่เปิดสอน
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={slotDate}
+                  onChange={(e) => setSlotDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  เวลาเริ่ม (Start)
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={slotStartTime}
+                  onChange={(e) => setSlotStartTime(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  เวลาสิ้นสุด (End)
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={slotEndTime}
+                  onChange={(e) => setSlotEndTime(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isAddingSlot}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm transition-all shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                {isAddingSlot ? "กำลังเพิ่ม..." : "เพิ่มเวลาว่าง"}
+              </button>
+            </form>
+
+            {availabilities.length > 0 ? (
+              <div className="flex flex-wrap gap-3">
+                {availabilities.map((slot) => {
+                  const start = new Date(slot.start_at);
+                  const end = new Date(slot.end_at);
+                  const dateStr = start.toLocaleDateString("th-TH", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  });
+                  const timeStr = `${start.toLocaleTimeString("th-TH", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })} - ${end.toLocaleTimeString("th-TH", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })} น.`;
+
+                  return (
+                    <div
+                      key={slot.id}
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border text-sm ${
+                        slot.is_booked
+                          ? "bg-amber-50 border-amber-200 text-amber-900"
+                          : "bg-emerald-50/70 border-emerald-200 text-emerald-950"
+                      }`}
+                    >
+                      <div>
+                        <span className="font-bold block">{dateStr}</span>
+                        <span className="text-xs opacity-80">{timeStr}</span>
+                      </div>
+                      <span
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                          slot.is_booked
+                            ? "bg-amber-200/80 text-amber-900"
+                            : "bg-emerald-200/80 text-emerald-900"
+                        }`}
+                      >
+                        {slot.is_booked ? "ถูกจองแล้ว" : "ว่าง"}
+                      </span>
+                      {!slot.is_booked && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAvailability(slot.id)}
+                          className="text-gray-400 hover:text-red-600 p-1"
+                          title="ลบช่วงเวลานี้"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-2">
+                ยังไม่ได้ลงเวลาว่างเปิดสอน
+              </p>
+            )}
           </div>
 
           {/* === จัดการคอร์สเรียน (เพิ่มส่วนแสดงรูปหน้าปก 16:9 และป้าย Level) === */}
