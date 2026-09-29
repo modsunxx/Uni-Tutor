@@ -18,6 +18,9 @@ import {
   PlayCircle,
   CheckCircle2,
   GraduationCap,
+  Calendar,
+  Clock,
+  AlertCircle,
 } from "lucide-react";
 
 type CourseDetail = {
@@ -37,6 +40,7 @@ type CourseDetail = {
     category: string | null;
   } | null;
   tutor_profiles: {
+    headline?: string | null;
     bio: string | null;
     gpa: number | null;
     rating: number | null;
@@ -52,6 +56,23 @@ type CourseDetail = {
       profile_image_url?: string | null;
     } | null;
   } | null;
+};
+
+type AvailabilitySlot = {
+  id: number;
+  tutor_id: string;
+  start_at: string;
+  end_at: string;
+  is_booked: boolean;
+};
+
+type ReviewItem = {
+  id: number;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  reviewer_name: string;
+  reviewer_avatar: string | null;
 };
 
 // ฟังก์ชันแปลงลิงก์ YouTube (รองรับทั้งเว็บคอม มือถือ m.youtube.com และ Shorts)
@@ -84,13 +105,30 @@ export default function CourseDetailPage() {
 
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [tutorGrade, setTutorGrade] = useState<string | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
+  const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
+  const [bookingNote, setBookingNote] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isBooking, setIsBooking] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [bookingError, setBookingError] = useState("");
+  const [bookingSuccess, setBookingSuccess] = useState("");
 
   useEffect(() => {
     const fetchCourseDetail = async () => {
       setIsLoading(true);
       try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session?.user) {
+          setCurrentUserId(session.user.id);
+        }
+
         const { data, error } = await supabase
           .from("courses")
           .select(
@@ -107,6 +145,7 @@ export default function CourseDetailPage() {
             preview_video_url,
             master_subjects ( code, name, category ),
             tutor_profiles (
+              headline,
               bio,
               gpa,
               rating,
@@ -124,7 +163,7 @@ export default function CourseDetailPage() {
           const formattedCourse = data as unknown as CourseDetail;
           setCourse(formattedCourse);
 
-          // ดึงเกรดของวิชานี้ที่ติวเตอร์สอบได้จากตาราง tutor_verified_subjects
+          // 1. ดึงเกรดของวิชานี้ที่ติวเตอร์สอบได้จากตาราง tutor_verified_subjects
           if (formattedCourse.tutor_id && formattedCourse.subject_id) {
             const { data: verifiedData } = await supabase
               .from("tutor_verified_subjects")
@@ -135,6 +174,54 @@ export default function CourseDetailPage() {
 
             if (verifiedData?.grade) {
               setTutorGrade(verifiedData.grade);
+            }
+          }
+
+          // 2. ดึงตารางเวลาว่างของติวเตอร์คนนี้ที่ยังไม่ถูกจอง (is_booked = false)
+          if (formattedCourse.tutor_id) {
+            const { data: slotsData } = await supabase
+              .from("availability")
+              .select("*")
+              .eq("tutor_id", formattedCourse.tutor_id)
+              .eq("is_booked", false)
+              .order("start_at", { ascending: true });
+
+            if (slotsData) {
+              setAvailableSlots(slotsData as AvailabilitySlot[]);
+            }
+          }
+
+          // 3. ดึงรายการรีวิวทั้งหมดของติวเตอร์คนนี้จากตาราง reviews
+          if (formattedCourse.tutor_id) {
+            const { data: revData } = await supabase
+              .from("reviews")
+              .select("id, reviewer_id, rating, comment, created_at")
+              .eq("tutor_id", formattedCourse.tutor_id)
+              .order("created_at", { ascending: false });
+
+            if (revData && revData.length > 0) {
+              const reviewerIds = Array.from(
+                new Set(revData.map((r) => r.reviewer_id)),
+              );
+              const { data: reviewersData } = await supabase
+                .from("users")
+                .select("id, first_name, nickname, profile_image_url")
+                .in("id", reviewerIds);
+
+              const mappedReviews: ReviewItem[] = revData.map((r) => {
+                const u = reviewersData?.find((x) => x.id === r.reviewer_id);
+                return {
+                  id: r.id,
+                  rating: r.rating,
+                  comment: r.comment,
+                  created_at: r.created_at,
+                  reviewer_name: u
+                    ? u.nickname || u.first_name
+                    : "นักศึกษา",
+                  reviewer_avatar: u?.profile_image_url || null,
+                };
+              });
+              setReviews(mappedReviews);
             }
           }
         }
@@ -156,6 +243,87 @@ export default function CourseDetailPage() {
       router.back();
     } else {
       router.push("/search");
+    }
+  };
+
+  // คำนวณจำนวนชั่วโมงและราคารวมจากช่วงเวลาที่เลือก
+  const selectedSlot = availableSlots.find((s) => s.id === selectedSlotId);
+  const durationHours = selectedSlot
+    ? Math.max(
+        0.5,
+        (new Date(selectedSlot.end_at).getTime() -
+          new Date(selectedSlot.start_at).getTime()) /
+          (1000 * 60 * 60),
+      )
+    : 0;
+  const totalAmount = course
+    ? Math.round(durationHours * course.price_per_hour)
+    : 0;
+
+  const handleConfirmBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBookingError("");
+    setBookingSuccess("");
+
+    if (!currentUserId) {
+      router.push("/login");
+      return;
+    }
+
+    if (!course) return;
+
+    if (currentUserId === course.tutor_id) {
+      setBookingError("คุณไม่สามารถจองคอร์สเรียนของตัวเองได้ครับ");
+      return;
+    }
+
+    if (!selectedSlot) {
+      setBookingError("กรุณาคลิกเลือกวันและเวลาเรียนที่ต้องการก่อนครับ");
+      return;
+    }
+
+    setIsBooking(true);
+    try {
+      // 1. บันทึกข้อมูลการจองลงตาราง bookings
+      const { error: insertBookingError } = await supabase
+        .from("bookings")
+        .insert({
+          course_id: Number(course.id),
+          learner_id: currentUserId,
+          tutor_id: course.tutor_id,
+          start_at: selectedSlot.start_at,
+          end_at: selectedSlot.end_at,
+          total_amount: totalAmount,
+          note: bookingNote.trim() || null,
+        });
+
+      if (insertBookingError) throw insertBookingError;
+
+      // 2. อัปเดตสถานะในตาราง availability ให้เป็น is_booked = true
+      const { error: updateSlotError } = await supabase
+        .from("availability")
+        .update({ is_booked: true })
+        .eq("id", selectedSlot.id);
+
+      if (updateSlotError) throw updateSlotError;
+
+      // 3. อัปเดตรายการเวลาว่างบนหน้าจอทันที
+      setAvailableSlots((prev) =>
+        prev.filter((s) => s.id !== selectedSlot.id),
+      );
+      setSelectedSlotId(null);
+      setBookingNote("");
+      setBookingSuccess(
+        "จองคอร์สเรียนสำเร็จ! สามารถไปที่หน้าแดชบอร์ดผู้เรียนเพื่อแนบสลิปชำระเงินได้เลยครับ",
+      );
+    } catch (err) {
+      console.error("Booking error:", err);
+      const errObj = err as { message?: string };
+      setBookingError(
+        `ไม่สามารถทำการจองได้: ${errObj?.message || "กรุณาลองใหม่อีกครั้ง"}`,
+      );
+    } finally {
+      setIsBooking(false);
     }
   };
 
@@ -196,6 +364,7 @@ export default function CourseDetailPage() {
   const tutorDisplayName = tutorUser?.nickname
     ? `${tutorUser.nickname} (${tutorFullName})`
     : tutorFullName;
+  const tutorHeadline = course.tutor_profiles?.headline;
   const tutorBio =
     tutorUser?.bio ||
     course.tutor_profiles?.bio ||
@@ -268,7 +437,7 @@ export default function CourseDetailPage() {
       {/* === Main Content === */}
       <div className="max-w-6xl mx-auto px-3 sm:px-4 -mt-10 sm:-mt-14 relative z-20">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-8">
-          {/* คอลัมน์ซ้าย (2 ส่วน): รูปหน้าปก, รายละเอียดการสอน, วิดีโอแนะนำคอร์ส */}
+          {/* คอลัมน์ซ้าย (2 ส่วน): รูปหน้าปก, รายละเอียดการสอน, วิดีโอแนะนำคอร์ส, รีวิว */}
           <div className="lg:col-span-2 space-y-5 sm:space-y-6">
             {/* 1. รูปหน้าปกคอร์ส (16:9) */}
             {course.cover_image_url && (
@@ -338,11 +507,84 @@ export default function CourseDetailPage() {
                 )}
               </div>
             )}
+
+            {/* 4. รีวิวจากนักศึกษาที่เรียนกับติวเตอร์ */}
+            <div className="bg-white rounded-3xl sm:rounded-4xl shadow-md border border-gray-100 p-5 sm:p-8">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Star className="w-5 h-5 fill-amber-400 text-amber-400 shrink-0" />
+                  รีวิวจากผู้เรียน ({reviews.length})
+                </span>
+              </h2>
+
+              {reviews.length > 0 ? (
+                <div className="space-y-4">
+                  {reviews.map((rev) => (
+                    <div
+                      key={rev.id}
+                      className="p-4 rounded-2xl bg-gray-50/80 border border-gray-100 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          {rev.reviewer_avatar ? (
+                            <Image
+                              src={rev.reviewer_avatar}
+                              alt={rev.reviewer_name}
+                              width={32}
+                              height={32}
+                              unoptimized
+                              className="w-8 h-8 rounded-full object-cover border border-emerald-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0">
+                              {rev.reviewer_name.charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-sm font-bold text-gray-900">
+                              คุณ{rev.reviewer_name}
+                            </p>
+                            <p className="text-[11px] text-gray-400">
+                              {new Date(rev.created_at).toLocaleDateString(
+                                "th-TH",
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Star
+                              key={s}
+                              className={`w-4 h-4 ${
+                                s <= rev.rating
+                                  ? "fill-amber-400 text-amber-400"
+                                  : "text-gray-300"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {rev.comment && (
+                        <p className="text-sm text-gray-700 pl-10 wrap-break-word">
+                          {rev.comment}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 text-center py-6 bg-gray-50/50 rounded-2xl border border-gray-100">
+                  ยังไม่มีรีวิวสำหรับติวเตอร์คนนี้ มาร่วมเป็นคนแรกที่รีวิวหลังเรียนจบกันเลย!
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* คอลัมน์ขวา (1 ส่วน): ราคา รูปแบบการสอน ข้อมูลติวเตอร์ และช่องทางติดต่อ */}
+          {/* คอลัมน์ขวา (1 ส่วน): ราคา กดจองเวลาเรียน ข้อมูลติวเตอร์ และช่องทางติดต่อ */}
           <div className="space-y-5 sm:space-y-6">
-            {/* การ์ดราคาและข้อมูลสรุป */}
+            {/* การ์ดราคา เลือกเวลาจอง และข้อมูลสรุป */}
             <div className="bg-white rounded-3xl sm:rounded-4xl shadow-xl border border-gray-100 p-5 sm:p-8">
               <div className="flex flex-wrap items-baseline justify-between gap-2 pb-5 border-b border-gray-100">
                 <span className="text-sm font-semibold text-gray-500">
@@ -359,7 +601,7 @@ export default function CourseDetailPage() {
                 </div>
               </div>
 
-              <div className="py-4 sm:py-5 space-y-3.5 text-sm">
+              <div className="py-4 sm:py-5 space-y-3.5 text-sm border-b border-gray-100">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-gray-500 flex items-center gap-2">
                     {formatClean === "online" ? (
@@ -395,8 +637,141 @@ export default function CourseDetailPage() {
                 )}
               </div>
 
+              {/* === ส่วนเลือกเวลาเรียนและกดจอง (Bookings) === */}
+              <form onSubmit={handleConfirmBooking} className="pt-5 space-y-4">
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+                  เลือกวันและเวลาที่ต้องการจองเรียน
+                </h3>
+
+                {bookingError && (
+                  <div className="p-3.5 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-2.5 text-red-600 text-xs font-medium">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{bookingError}</span>
+                  </div>
+                )}
+
+                {bookingSuccess && (
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-2.5 text-emerald-800 text-xs font-semibold">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                    <div>
+                      <span>{bookingSuccess}</span>
+                      <Link
+                        href="/dashboard/learner"
+                        className="block mt-1.5 text-emerald-700 underline font-bold"
+                      >
+                        ไปที่หน้าแดชบอร์ดผู้เรียนเพื่อแนบสลิป &rarr;
+                      </Link>
+                    </div>
+                  </div>
+                )}
+
+                {availableSlots.length > 0 ? (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {availableSlots.map((slot) => {
+                      const start = new Date(slot.start_at);
+                      const end = new Date(slot.end_at);
+                      const isSelected = selectedSlotId === slot.id;
+
+                      const dateStr = start.toLocaleDateString("th-TH", {
+                        weekday: "short",
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      });
+                      const timeStr = `${start.toLocaleTimeString("th-TH", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })} - ${end.toLocaleTimeString("th-TH", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })} น.`;
+
+                      return (
+                        <button
+                          type="button"
+                          key={slot.id}
+                          onClick={() => setSelectedSlotId(slot.id)}
+                          className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-2 ${
+                            isSelected
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                              : "bg-gray-50 hover:bg-emerald-50/60 text-gray-800 border-gray-200/80"
+                          }`}
+                        >
+                          <div className="text-xs sm:text-sm">
+                            <p className="font-bold">{dateStr}</p>
+                            <p
+                              className={`text-xs flex items-center gap-1 mt-0.5 ${
+                                isSelected
+                                  ? "text-emerald-100"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              <Clock className="w-3.5 h-3.5 shrink-0" />
+                              {timeStr}
+                            </p>
+                          </div>
+                          <span
+                            className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${
+                              isSelected
+                                ? "bg-white text-emerald-700"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}
+                          >
+                            {isSelected ? "เลือกแล้ว ✓" : "เลือกเวลานี้"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-4 bg-gray-50 border border-gray-100 rounded-2xl text-xs text-gray-500 text-center">
+                    ขณะนี้ติวเตอร์ยังไม่ได้เปิดช่วงเวลาว่างเพิ่มเติม
+                    สามารถทักสอบถามเวลาเรียนผ่าน Line หรือเบอร์โทรด้านล่างได้ครับ
+                  </div>
+                )}
+
+                {selectedSlot && (
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        ข้อความถึงติวเตอร์ (Note - ไม่บังคับ)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={bookingNote}
+                        onChange={(e) => setBookingNote(e.target.value)}
+                        placeholder="ระบุหัวข้อที่ต้องการเน้น หรือสถานที่นัดเรียน..."
+                        className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                      />
+                    </div>
+
+                    <div className="bg-emerald-50/80 border border-emerald-200 p-3.5 rounded-2xl flex items-center justify-between text-sm">
+                      <span className="text-emerald-900 font-medium">
+                        รวมเวลา {durationHours} ชม.
+                      </span>
+                      <span className="text-lg font-extrabold text-emerald-700">
+                        ยอดชำระ ฿{totalAmount.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isBooking || availableSlots.length === 0}
+                  className="w-full bg-[#1a1a1a] hover:bg-black text-white font-semibold py-3.5 px-6 rounded-full shadow-lg transition-all active:scale-95 disabled:opacity-40 text-sm sm:text-base"
+                >
+                  {isBooking
+                    ? "กำลังบันทึกการจอง..."
+                    : currentUserId
+                      ? "ยืนยันการจองเรียน"
+                      : "เข้าสู่ระบบเพื่อจองเรียน"}
+                </button>
+              </form>
+
               {/* ข้อมูลติดต่อติวเตอร์ */}
-              <div className="pt-5 border-t border-gray-100 space-y-3">
+              <div className="pt-5 mt-5 border-t border-gray-100 space-y-3">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
                   ช่องทางติดต่อเรียนกับติวเตอร์
                 </p>
@@ -467,6 +842,11 @@ export default function CourseDetailPage() {
                   <h4 className="font-bold text-gray-900 text-base sm:text-lg wrap-break-word leading-snug">
                     {tutorDisplayName}
                   </h4>
+                  {tutorHeadline && (
+                    <p className="text-xs font-medium text-emerald-700 mt-0.5 wrap-break-word">
+                      {tutorHeadline}
+                    </p>
+                  )}
                   <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mt-1.5">
                     <span className="inline-flex items-center gap-1 text-amber-600 font-semibold">
                       <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
