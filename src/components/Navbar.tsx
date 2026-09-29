@@ -5,14 +5,14 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import Image from "next/image";
-import { LogOut, LayoutDashboard } from "lucide-react";
+import { LogOut, LayoutDashboard, ShieldCheck } from "lucide-react";
 
 type UserProfile = {
   id: string;
   first_name: string;
   last_name: string;
   nickname: string | null;
-  role: "Learner" | "Tutor" | "Admin" | "learner" | "tutor" | "admin";
+  role: "Learner" | "Tutor" | "Admin" | "learner" | "tutor" | "admin" | string;
   profile_image_url: string | null;
 };
 
@@ -36,11 +36,13 @@ export default function Navbar() {
             "id, first_name, last_name, nickname, role, profile_image_url",
           )
           .eq("id", session.user.id)
-          .single();
+          .maybeSingle();
 
         if (profile) {
           setUserProfile(profile as UserProfile);
         }
+      } else {
+        setUserProfile(null);
       }
       setIsLoading(false);
     };
@@ -57,7 +59,7 @@ export default function Navbar() {
             "id, first_name, last_name, nickname, role, profile_image_url",
           )
           .eq("id", session.user.id)
-          .single();
+          .maybeSingle();
         if (profile) setUserProfile(profile as UserProfile);
       } else if (event === "SIGNED_OUT") {
         setUserProfile(null);
@@ -65,7 +67,7 @@ export default function Navbar() {
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase, pathname]); // ดึงข้อมูลใหม่เมื่อเปลี่ยนหน้า (เพื่อให้รูปอัปเดตทันทีหลังแก้ไขเสร็จ)
+  }, [supabase, pathname]); // ดึงข้อมูลใหม่เมื่อเปลี่ยนหน้า (เพื่อให้รูปและยศอัปเดตทันที)
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -74,14 +76,22 @@ export default function Navbar() {
   };
 
   const displayName = userProfile?.nickname || userProfile?.first_name || "";
+  const roleClean = userProfile?.role?.trim().toLowerCase() || "learner";
+
+  const dashboardHref =
+    roleClean === "admin"
+      ? "/dashboard/admin"
+      : roleClean === "tutor"
+        ? "/dashboard/tutor"
+        : "/dashboard/learner";
 
   return (
     <nav className="w-full bg-white/90 backdrop-blur-md border-b border-gray-100 sticky top-0 z-50 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 h-18 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 h-18 flex items-center justify-between gap-2">
         {/* โลโก้ */}
         <Link
           href="/"
-          className="font-bold text-2xl text-emerald-800 flex items-center gap-2 tracking-tight hover:opacity-80 transition-opacity"
+          className="font-bold text-xl sm:text-2xl text-emerald-800 flex items-center gap-2 tracking-tight hover:opacity-80 transition-opacity shrink-0"
         >
           <svg
             width="24"
@@ -101,10 +111,14 @@ export default function Navbar() {
           UniTutor
         </Link>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3 sm:gap-6">
           <Link
             href="/search"
-            className="text-sm font-semibold text-gray-600 hover:text-emerald-600 transition-colors"
+            className={`text-sm font-semibold transition-colors ${
+              pathname === "/search"
+                ? "text-emerald-700 font-bold"
+                : "text-gray-600 hover:text-emerald-600"
+            }`}
           >
             ค้นหาคอร์ส
           </Link>
@@ -112,24 +126,24 @@ export default function Navbar() {
           {isLoading ? (
             <div className="w-24 h-10 bg-gray-100 animate-pulse rounded-full"></div>
           ) : userProfile ? (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <Link
-                href={
-                  userProfile.role.toLowerCase() === "admin"
-                    ? "/admin"
-                    : `/dashboard/${userProfile.role.toLowerCase()}`
-                }
-                className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-emerald-600 transition-colors"
+                href={dashboardHref}
+                className={`flex items-center gap-1.5 text-sm font-semibold transition-colors ${
+                  pathname.startsWith("/dashboard")
+                    ? "text-emerald-700 font-bold"
+                    : "text-gray-600 hover:text-emerald-600"
+                }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
-                แดชบอร์ด
+                <span className="hidden sm:inline">แดชบอร์ด</span>
               </Link>
 
-              <div className="flex items-center gap-2 pl-4 border-l border-gray-200">
+              <div className="flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-4 border-l border-gray-200">
                 {/* คลิกที่รูปโปรไฟล์หรือชื่อ เพื่อไปหน้าแก้ไขโปรไฟล์ (/profile/edit) */}
                 <Link
                   href="/profile/edit"
-                  className="flex items-center gap-2.5 py-1.5 px-2.5 rounded-full hover:bg-emerald-50/70 transition-all group"
+                  className="flex items-center gap-2 py-1.5 px-2.5 rounded-full hover:bg-emerald-50/70 transition-all group"
                   title="แก้ไขโปรไฟล์และรูปภาพ"
                 >
                   {userProfile.profile_image_url ? (
@@ -139,20 +153,37 @@ export default function Navbar() {
                       width={36}
                       height={36}
                       unoptimized
-                      className="w-9 h-9 rounded-full object-cover border border-emerald-200 shadow-xs"
+                      className={`w-9 h-9 rounded-full object-cover shadow-xs shrink-0 ${
+                        roleClean === "admin"
+                          ? "border-2 border-amber-400"
+                          : "border border-emerald-200"
+                      }`}
                     />
                   ) : (
-                    <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shadow-inner group-hover:bg-emerald-200 transition-colors">
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shadow-inner group-hover:bg-emerald-200 transition-colors shrink-0">
                       {displayName.charAt(0)}
                     </div>
                   )}
 
-                  <span className="text-sm font-bold text-gray-800 group-hover:text-emerald-700 transition-colors hidden md:block">
+                  <span className="text-sm font-bold text-gray-800 group-hover:text-emerald-700 transition-colors hidden md:inline max-w-28 truncate">
                     {displayName}
-                    <span className="ml-1.5 text-[11px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
-                      {userProfile.role}
-                    </span>
                   </span>
+
+                  {/* ป้ายแสดงตำแหน่ง: Admin (สีทอง) / Tutor (สีเขียว) / Learner (สีเทา) */}
+                  {roleClean === "admin" ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-extrabold bg-linear-to-r from-amber-200 via-yellow-300 to-amber-400 text-amber-950 border border-amber-400/80 px-2.5 py-0.5 rounded-full shadow-2xs">
+                      <ShieldCheck className="w-3 h-3 text-amber-900 shrink-0" />
+                      Admin
+                    </span>
+                  ) : roleClean === "tutor" ? (
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                      Tutor
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-0.5 rounded-full">
+                      Learner
+                    </span>
+                  )}
                 </Link>
 
                 <button
@@ -165,7 +196,7 @@ export default function Navbar() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-5 pl-2">
+            <div className="flex items-center gap-3 sm:gap-5 pl-2">
               <Link
                 href="/register"
                 className="text-sm font-semibold text-gray-600 hover:text-emerald-600 transition-colors hidden md:block"
@@ -174,7 +205,7 @@ export default function Navbar() {
               </Link>
               <Link
                 href="/login"
-                className="bg-[#1a1a1a] text-white text-sm font-semibold px-6 py-2.5 rounded-full hover:bg-black transition-all shadow-md active:scale-95"
+                className="bg-[#1a1a1a] text-white text-sm font-semibold px-5 sm:px-6 py-2.5 rounded-full hover:bg-black transition-all shadow-md active:scale-95"
               >
                 เข้าสู่ระบบ
               </Link>

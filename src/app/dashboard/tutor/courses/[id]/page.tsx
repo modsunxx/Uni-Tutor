@@ -14,8 +14,25 @@ import {
   Video,
   Link as LinkIcon,
   X,
+  Layers,
+  Plus,
+  Trash2,
+  FileText,
+  PlayCircle,
+  ExternalLink,
+  UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
+
+type CourseContentItem = {
+  id: number;
+  course_id: number;
+  title: string;
+  type: string | null;
+  file_path: string | null;
+  sort_order: number | null;
+  is_preview: boolean | null;
+};
 
 export default function EditCoursePage() {
   const supabase = createClient();
@@ -46,6 +63,19 @@ export default function EditCoursePage() {
   );
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrlInput, setVideoUrlInput] = useState("");
+
+  // ข้อมูลเนื้อหาบทเรียนและเอกสารประกอบ (course_contents)
+  const [contents, setContents] = useState<CourseContentItem[]>([]);
+  const [contentTitle, setContentTitle] = useState("");
+  const [contentType, setContentType] = useState("pdf");
+  const [contentSortOrder, setContentSortOrder] = useState("1");
+  const [contentIsPreview, setContentIsPreview] = useState(false);
+  const [contentSourceMode, setContentSourceMode] = useState<"upload" | "link">(
+    "upload",
+  );
+  const [contentFile, setContentFile] = useState<File | null>(null);
+  const [contentLinkInput, setContentLinkInput] = useState("");
+  const [isAddingContent, setIsAddingContent] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -92,6 +122,18 @@ export default function EditCoursePage() {
               setSubjectDisplay(courseData.title || "");
             }
           }
+
+          // ดึงรายการเนื้อหาบทเรียนจากตาราง course_contents
+          const { data: contentsData } = await supabase
+            .from("course_contents")
+            .select("*")
+            .eq("course_id", Number(courseId))
+            .order("sort_order", { ascending: true });
+
+          if (contentsData) {
+            setContents(contentsData as CourseContentItem[]);
+            setContentSortOrder(String(contentsData.length + 1));
+          }
         }
       } catch (err) {
         console.error("Error fetching course:", err);
@@ -118,6 +160,99 @@ export default function EditCoursePage() {
     setCoverFile(null);
     setCoverPreview(null);
     setExistingCoverUrl(null);
+  };
+
+  // ฟังก์ชันเพิ่มบทเรียนหรือเอกสารประกอบลงตาราง course_contents
+  const handleAddContent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contentTitle.trim()) {
+      alert("กรุณาระบุชื่อบทเรียนหรือชื่อเอกสารครับ");
+      return;
+    }
+
+    setIsAddingContent(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error("กรุณาเข้าสู่ระบบใหม่");
+
+      let finalFilePath: string | null = null;
+
+      if (contentSourceMode === "upload" && contentFile) {
+        const ext = contentFile.name.split(".").pop();
+        const storagePath = `contents/${courseId}-${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("courses")
+          .upload(storagePath, contentFile, {
+            cacheControl: "3600",
+            upsert: true,
+          });
+
+        if (uploadErr) throw uploadErr;
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("courses").getPublicUrl(storagePath);
+        finalFilePath = publicUrl;
+      } else if (contentSourceMode === "link" && contentLinkInput.trim()) {
+        finalFilePath = contentLinkInput.trim();
+      }
+
+      const nextSortOrder = parseInt(contentSortOrder) || contents.length + 1;
+
+      const { data: insertedContent, error: insertErr } = await supabase
+        .from("course_contents")
+        .insert({
+          course_id: Number(courseId),
+          title: contentTitle.trim(),
+          type: contentType,
+          file_path: finalFilePath,
+          sort_order: nextSortOrder,
+          is_preview: contentIsPreview,
+        })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      if (insertedContent) {
+        const updatedList = [
+          ...contents,
+          insertedContent as CourseContentItem,
+        ].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+        setContents(updatedList);
+        setContentTitle("");
+        setContentFile(null);
+        setContentLinkInput("");
+        setContentIsPreview(false);
+        setContentSortOrder(String(updatedList.length + 1));
+      }
+    } catch (err) {
+      console.error("Error adding course content:", err);
+      const errObj = err as { message?: string };
+      alert(
+        `ไม่สามารถเพิ่มบทเรียนได้: ${errObj?.message || "กรุณาตรวจสอบการตั้งค่าตาราง course_contents"}`,
+      );
+    } finally {
+      setIsAddingContent(false);
+    }
+  };
+
+  // ฟังก์ชันลบบทเรียนออกจากตาราง course_contents
+  const handleDeleteContent = async (contentId: number) => {
+    try {
+      const { error } = await supabase
+        .from("course_contents")
+        .delete()
+        .eq("id", contentId);
+
+      if (error) throw error;
+      setContents((prev) => prev.filter((item) => item.id !== contentId));
+    } catch (err) {
+      console.error("Error deleting content:", err);
+      alert("ไม่สามารถลบเนื้อหาบทเรียนนี้ได้");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -234,14 +369,15 @@ export default function EditCoursePage() {
               แก้ไขคอร์สเรียน
             </h1>
             <p className="text-sm md:text-base text-emerald-50 font-light mt-1 drop-shadow-sm">
-              ปรับปรุงระดับเนื้อหา รูปแบบการสอน ราคา รูปปก และวิดีโอแนะนำคอร์ส
+              ปรับปรุงระดับเนื้อหา รูปแบบการสอน ราคา รูปปก และเอกสารประกอบการสอน
             </p>
           </div>
         </div>
       </div>
 
-      {/* === Form Card === */}
-      <div className="max-w-3xl mx-auto px-4 -mt-12 relative z-20">
+      {/* === Content Area === */}
+      <div className="max-w-3xl mx-auto px-4 -mt-12 relative z-20 space-y-8">
+        {/* การ์ดที่ 1: ฟอร์มแก้ไขข้อมูลหลักของคอร์ส */}
         <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-8 md:p-12">
           {errorMsg && (
             <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3 text-red-600">
@@ -496,7 +632,7 @@ export default function EditCoursePage() {
               </div>
             </div>
 
-            {/* ปุ่มยกเลิกและบันทึก */}
+            {/* ปุ่มยกเลิกและบันทึกข้อมูลคอร์ส */}
             <div className="pt-6 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-gray-100">
               <Link
                 href="/dashboard/tutor"
@@ -514,12 +650,227 @@ export default function EditCoursePage() {
                 ) : (
                   <>
                     <Save className="w-5 h-5" />
-                    บันทึกการแก้ไข
+                    บันทึกการแก้ไขคอร์ส
                   </>
                 )}
               </button>
             </div>
           </form>
+        </div>
+
+        {/* การ์ดที่ 2: จัดการเนื้อหาบทเรียนและเอกสารประกอบ (course_contents) */}
+        <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-8 md:p-12 space-y-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-emerald-600" />
+              จัดการเนื้อหาบทเรียนและเอกสารประกอบ ({contents.length})
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">
+              เพิ่มหัวข้อบทเรียน อัปโหลดไฟล์ชีทสรุป (PDF) หรือแปะลิงก์วิดีโอสำหรับผู้ลงทะเบียนเรียน
+            </p>
+          </div>
+
+          {/* ฟอร์มเพิ่มบทเรียน/เอกสารใหม่ */}
+          <form
+            onSubmit={handleAddContent}
+            className="bg-gray-50/80 border border-gray-200/80 rounded-3xl p-5 sm:p-6 space-y-4"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-6 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  บทที่ (ลำดับ)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={contentSortOrder}
+                  onChange={(e) => setContentSortOrder(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  ชื่อบทเรียน / ชื่อเอกสาร <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={contentTitle}
+                  onChange={(e) => setContentTitle(e.target.value)}
+                  placeholder="เช่น บทที่ 1: ปูพื้นฐาน OOP พร้อมชีทสรุป"
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  ประเภทเนื้อหา (Type)
+                </label>
+                <select
+                  value={contentType}
+                  onChange={(e) => setContentType(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="pdf">เอกสาร / PDF (pdf)</option>
+                  <option value="video">วิดีโอ (video)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* เลือกอัปโหลดไฟล์ หรือ วางลิงก์ */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-gray-700">
+                  ไฟล์เอกสารประกอบ หรือ ลิงก์เนื้อหา (ไม่บังคับ)
+                </label>
+                <div className="flex bg-gray-200/70 p-0.5 rounded-lg text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setContentSourceMode("upload")}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                      contentSourceMode === "upload"
+                        ? "bg-white text-emerald-700 shadow-xs"
+                        : "text-gray-600"
+                    }`}
+                  >
+                    อัปโหลดไฟล์
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setContentSourceMode("link")}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                      contentSourceMode === "link"
+                        ? "bg-white text-emerald-700 shadow-xs"
+                        : "text-gray-600"
+                    }`}
+                  >
+                    วางลิงก์ URL
+                  </button>
+                </div>
+              </div>
+
+              {contentSourceMode === "upload" ? (
+                <label className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-white border-2 border-dashed border-emerald-200 rounded-2xl cursor-pointer hover:bg-emerald-50/40 transition-colors text-xs font-semibold text-emerald-700">
+                  <UploadCloud className="w-4 h-4 text-emerald-600" />
+                  <span>
+                    {contentFile
+                      ? `เลือกไฟล์แล้ว: ${contentFile.name}`
+                      : "คลิกเพื่อเลือกไฟล์ PDF, รูปภาพ หรือวิดีโอ"}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,image/*,video/*"
+                    onChange={(e) =>
+                      setContentFile(e.target.files?.[0] || null)
+                    }
+                    className="sr-only"
+                  />
+                </label>
+              ) : (
+                <input
+                  type="url"
+                  value={contentLinkInput}
+                  onChange={(e) => setContentLinkInput(e.target.value)}
+                  placeholder="วางลิงก์ Google Drive, Canva, หรือ YouTube..."
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
+              <label className="inline-flex items-center gap-2 cursor-pointer text-xs sm:text-sm font-semibold text-gray-700 select-none">
+                <input
+                  type="checkbox"
+                  checked={contentIsPreview}
+                  onChange={(e) => setContentIsPreview(e.target.checked)}
+                  className="w-4 h-4 accent-emerald-600 rounded"
+                />
+                เปิดให้ทุกคนดูตัวอย่างบทเรียน/เอกสารนี้ได้ฟรี (is_preview)
+              </label>
+
+              <button
+                type="submit"
+                disabled={isAddingContent}
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold rounded-full shadow-sm transition-all disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                {isAddingContent ? "กำลังเพิ่ม..." : "เพิ่มเนื้อหาบทเรียน"}
+              </button>
+            </div>
+          </form>
+
+          {/* รายการบทเรียนที่มีอยู่ในคอร์ส */}
+          {contents.length > 0 ? (
+            <div className="space-y-3">
+              {contents.map((item, idx) => {
+                const isVideo =
+                  item.type?.toLowerCase().includes("video") || false;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="p-4 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                        {isVideo ? (
+                          <PlayCircle className="w-5 h-5" />
+                        ) : (
+                          <FileText className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold text-emerald-700">
+                            บทที่ {item.sort_order ?? idx + 1}
+                          </span>
+                          <span className="text-[11px] font-semibold bg-gray-200/80 text-gray-700 px-2 py-0.5 rounded-md uppercase">
+                            {item.type || "pdf"}
+                          </span>
+                          {item.is_preview && (
+                            <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                              ดูฟรี (Preview)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-bold text-gray-900 truncate mt-0.5">
+                          {item.title}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {item.file_path && (
+                        <a
+                          href={item.file_path}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline px-2.5 py-1.5 bg-white rounded-xl border border-gray-200"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          เปิดไฟล์
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteContent(item.id)}
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                        title="ลบบทเรียนนี้"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-4">
+              ยังไม่มีหัวข้อบทเรียนหรือเอกสารประกอบในคอร์สนี้
+            </p>
+          )}
         </div>
       </div>
     </main>

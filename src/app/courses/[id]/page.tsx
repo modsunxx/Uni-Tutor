@@ -21,6 +21,10 @@ import {
   Calendar,
   Clock,
   AlertCircle,
+  FileText,
+  Lock,
+  ExternalLink,
+  Layers,
 } from "lucide-react";
 
 type CourseDetail = {
@@ -66,6 +70,16 @@ type AvailabilitySlot = {
   is_booked: boolean;
 };
 
+type CourseContentItem = {
+  id: number;
+  course_id: number;
+  title: string;
+  type: string | null;
+  file_path: string | null;
+  sort_order: number | null;
+  is_preview: boolean | null;
+};
+
 type ReviewItem = {
   id: number;
   rating: number;
@@ -106,6 +120,8 @@ export default function CourseDetailPage() {
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [tutorGrade, setTutorGrade] = useState<string | null>(null);
   const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
+  const [courseContents, setCourseContents] = useState<CourseContentItem[]>([]);
+  const [hasBookedCourse, setHasBookedCourse] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
   const [bookingNote, setBookingNote] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -125,8 +141,9 @@ export default function CourseDetailPage() {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (session?.user) {
-          setCurrentUserId(session.user.id);
+        const loggedInUserId = session?.user?.id || null;
+        if (loggedInUserId) {
+          setCurrentUserId(loggedInUserId);
         }
 
         const { data, error } = await supabase
@@ -191,7 +208,33 @@ export default function CourseDetailPage() {
             }
           }
 
-          // 3. ดึงรายการรีวิวทั้งหมดของติวเตอร์คนนี้จากตาราง reviews
+          // 3. ดึงเนื้อหาบทเรียนและเอกสารประกอบจากตาราง course_contents
+          const { data: contentsData } = await supabase
+            .from("course_contents")
+            .select("*")
+            .eq("course_id", Number(courseId))
+            .order("sort_order", { ascending: true });
+
+          if (contentsData) {
+            setCourseContents(contentsData as CourseContentItem[]);
+          }
+
+          // ตรวจสอบว่าผู้ใช้คนนี้เคยจองคอร์สนี้แล้วหรือยัง เพื่อปลดล็อกไฟล์เอกสารใน course_contents
+          if (loggedInUserId) {
+            const { data: existingBooking } = await supabase
+              .from("bookings")
+              .select("id")
+              .eq("course_id", Number(courseId))
+              .eq("learner_id", loggedInUserId)
+              .limit(1)
+              .maybeSingle();
+
+            if (existingBooking) {
+              setHasBookedCourse(true);
+            }
+          }
+
+          // 4. ดึงรายการรีวิวทั้งหมดของติวเตอร์คนนี้จากตาราง reviews
           if (formattedCourse.tutor_id) {
             const { data: revData } = await supabase
               .from("reviews")
@@ -307,10 +350,11 @@ export default function CourseDetailPage() {
 
       if (updateSlotError) throw updateSlotError;
 
-      // 3. อัปเดตรายการเวลาว่างบนหน้าจอทันที
+      // 3. อัปเดตรายการเวลาว่างบนหน้าจอและปลดล็อกเนื้อหาในคอร์สทันที
       setAvailableSlots((prev) =>
         prev.filter((s) => s.id !== selectedSlot.id),
       );
+      setHasBookedCourse(true);
       setSelectedSlotId(null);
       setBookingNote("");
       setBookingSuccess(
@@ -387,6 +431,8 @@ export default function CourseDetailPage() {
       course.preview_video_url.endsWith(".mp4") ||
       course.preview_video_url.endsWith(".webm"));
 
+  const isCourseOwner = currentUserId === course.tutor_id;
+
   return (
     <main className="min-h-screen bg-gray-50 pb-16 overflow-x-hidden">
       {/* === Header Section (รองรับมือถือและจอใหญ่) === */}
@@ -437,7 +483,7 @@ export default function CourseDetailPage() {
       {/* === Main Content === */}
       <div className="max-w-6xl mx-auto px-3 sm:px-4 -mt-10 sm:-mt-14 relative z-20">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-8">
-          {/* คอลัมน์ซ้าย (2 ส่วน): รูปหน้าปก, รายละเอียดการสอน, วิดีโอแนะนำคอร์ส, รีวิว */}
+          {/* คอลัมน์ซ้าย (2 ส่วน): รูปหน้าปก, รายละเอียดการสอน, เนื้อหาบทเรียน (course_contents), วิดีโอแนะนำคอร์ส, รีวิว */}
           <div className="lg:col-span-2 space-y-5 sm:space-y-6">
             {/* 1. รูปหน้าปกคอร์ส (16:9) */}
             {course.cover_image_url && (
@@ -466,7 +512,103 @@ export default function CourseDetailPage() {
               </div>
             </div>
 
-            {/* 3. วิดีโอแนะนำคอร์ส (ถ้ามี) */}
+            {/* 3. โครงสร้างเนื้อหาบทเรียนและเอกสารประกอบ (course_contents) */}
+            <div className="bg-white rounded-3xl sm:rounded-4xl shadow-md border border-gray-100 p-5 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-emerald-600 shrink-0" />
+                  เนื้อหาบทเรียนและเอกสารประกอบ ({courseContents.length})
+                </h2>
+                {isCourseOwner && (
+                  <Link
+                    href={`/dashboard/tutor/courses/${course.id}`}
+                    className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-1.5 rounded-full transition-colors"
+                  >
+                    + จัดการเนื้อหาบทเรียน
+                  </Link>
+                )}
+              </div>
+
+              {courseContents.length > 0 ? (
+                <div className="space-y-3">
+                  {courseContents.map((item, idx) => {
+                    const isVideoType =
+                      item.type?.toLowerCase().includes("video") || false;
+                    const canAccess =
+                      Boolean(item.is_preview) ||
+                      hasBookedCourse ||
+                      isCourseOwner;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-4 rounded-2xl bg-gray-50/80 border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-bold text-xs ${
+                              canAccess
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-gray-200 text-gray-500"
+                            }`}
+                          >
+                            {isVideoType ? (
+                              <PlayCircle className="w-5 h-5" />
+                            ) : (
+                              <FileText className="w-5 h-5" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-bold text-emerald-700">
+                                บทที่ {item.sort_order ?? idx + 1}
+                              </span>
+                              {item.is_preview && (
+                                <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                                  ดูตัวอย่างฟรี
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm sm:text-base font-bold text-gray-900 wrap-break-word mt-0.5">
+                              {item.title}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 flex items-center justify-end">
+                          {canAccess && item.file_path ? (
+                            <a
+                              href={item.file_path}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              เปิดดูเอกสาร / เนื้อหา
+                            </a>
+                          ) : canAccess && !item.file_path ? (
+                            <span className="text-xs text-gray-400 font-medium px-3 py-1.5 bg-white rounded-xl border border-gray-100">
+                              หัวข้อการสอนในคลาส
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 bg-gray-100 px-3.5 py-2 rounded-xl">
+                              <Lock className="w-3.5 h-3.5 text-gray-400" />
+                              สำหรับผู้ลงทะเบียนเรียน
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 text-center py-6 bg-gray-50/50 rounded-2xl border border-gray-100">
+                  ติวเตอร์ยังไม่ได้อัปโหลดหัวข้อบทเรียนหรือชีทประกอบการเรียนเพิ่มเติม
+                </p>
+              )}
+            </div>
+
+            {/* 4. วิดีโอแนะนำคอร์ส (ถ้ามี) */}
             {course.preview_video_url && (
               <div className="bg-white rounded-3xl sm:rounded-4xl shadow-md border border-gray-100 p-5 sm:p-8">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
@@ -508,7 +650,7 @@ export default function CourseDetailPage() {
               </div>
             )}
 
-            {/* 4. รีวิวจากนักศึกษาที่เรียนกับติวเตอร์ */}
+            {/* 5. รีวิวจากนักศึกษาที่เรียนกับติวเตอร์ */}
             <div className="bg-white rounded-3xl sm:rounded-4xl shadow-md border border-gray-100 p-5 sm:p-8">
               <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center justify-between">
                 <span className="flex items-center gap-2">

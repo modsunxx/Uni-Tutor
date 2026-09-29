@@ -22,6 +22,7 @@ import {
   ChevronDown,
   X,
   Sparkles,
+  Bell,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -59,6 +60,16 @@ type AvailabilitySlot = {
   is_booked: boolean;
 };
 
+// เพิ่ม Type สำหรับรายการแจ้งเตือนการจอง
+type BookingNotification = {
+  id: number;
+  status: string | null;
+  created_at: string;
+  start_at: string;
+  total_amount: number;
+  courses: { title: string } | null;
+};
+
 export default function TutorDashboardPage() {
   const supabase = createClient();
   const [user, setUser] = useState<User | null>(null);
@@ -73,6 +84,7 @@ export default function TutorDashboardPage() {
   const [lastName, setLastName] = useState("");
 
   const [courses, setCourses] = useState<Course[]>([]);
+  const [recentBookings, setRecentBookings] = useState<BookingNotification[]>([]); // State เก็บข้อมูลแจ้งเตือน
 
   // ข้อมูลเวลาว่างเปิดสอนจากตาราง availability
   const [availabilities, setAvailabilities] = useState<AvailabilitySlot[]>([]);
@@ -160,6 +172,25 @@ export default function TutorDashboardPage() {
 
               if (availData) {
                 setAvailabilities(availData as AvailabilitySlot[]);
+              }
+
+              // --- เพิ่มใหม่: ดึงข้อมูลการจอง 5 รายการล่าสุดมาแสดงเป็นแจ้งเตือน ---
+              const { data: bookingsData } = await supabase
+                .from("bookings")
+                .select(`
+                  id,
+                  status,
+                  created_at,
+                  start_at,
+                  total_amount,
+                  courses ( title )
+                `)
+                .eq("tutor_id", session.user.id)
+                .order("created_at", { ascending: false })
+                .limit(5);
+
+              if (bookingsData) {
+                setRecentBookings(bookingsData as unknown as BookingNotification[]);
               }
             } else {
               setIsPending(true);
@@ -602,14 +633,64 @@ export default function TutorDashboardPage() {
               </div>
             </div>
 
-            <div className="bg-white p-8 rounded-4xl border border-gray-100 shadow-sm flex flex-col">
-              <h3 className="text-lg font-bold text-gray-900 mb-6">
-                แจ้งเตือนล่าสุด
-              </h3>
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                <Clock className="w-10 h-10 mb-3 opacity-30" />
-                <p className="text-sm">ยังไม่มีความเคลื่อนไหวใหม่</p>
+            {/* === อัปเดตส่วนแสดงการแจ้งเตือนล่าสุด === */}
+            <div className="bg-white p-8 rounded-4xl border border-gray-100 shadow-sm flex flex-col h-full">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-900">
+                  แจ้งเตือนล่าสุด
+                </h3>
+                {recentBookings.length > 0 && (
+                  <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <Bell className="w-3.5 h-3.5" /> ใหม่
+                  </span>
+                )}
               </div>
+
+              {recentBookings.length > 0 ? (
+                <div className="space-y-4 overflow-y-auto pr-1">
+                  {recentBookings.map((booking) => {
+                    const isPending =
+                      !booking.status || booking.status === "pending";
+                    return (
+                      <div
+                        key={booking.id}
+                        className="flex gap-3 p-3.5 rounded-2xl bg-gray-50 border border-gray-100 hover:bg-gray-100/70 transition-colors"
+                      >
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                            isPending
+                              ? "bg-amber-100 text-amber-600"
+                              : "bg-emerald-100 text-emerald-600"
+                          }`}
+                        >
+                          <Clock className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-gray-900 truncate">
+                            การจอง:{" "}
+                            {booking.courses?.title || "ไม่ระบุชื่อคอร์ส"}
+                          </p>
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            เวลาเรียน:{" "}
+                            {new Date(booking.start_at).toLocaleDateString(
+                              "th-TH",
+                            )}{" "}
+                            • ยอด ฿{booking.total_amount}
+                          </p>
+                          <p className="text-[10px] text-gray-400 mt-0.5 font-medium">
+                            {new Date(booking.created_at).toLocaleString("th-TH")}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-10">
+                  <Clock className="w-10 h-10 mb-3 opacity-30" />
+                  <p className="text-sm">ยังไม่มีความเคลื่อนไหวใหม่</p>
+                </div>
+              )}
             </div>
           </div>
 
