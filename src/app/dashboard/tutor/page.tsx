@@ -23,6 +23,9 @@ import {
   X,
   Sparkles,
   Bell,
+  Phone,
+  MessageCircle,
+  Calendar,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -60,14 +63,23 @@ type AvailabilitySlot = {
   is_booked: boolean;
 };
 
-// เพิ่ม Type สำหรับรายการแจ้งเตือนการจอง
+// อัปเดต Type ให้รองรับข้อมูลผู้เรียน (Learner)
 type BookingNotification = {
   id: number;
   status: string | null;
   created_at: string;
   start_at: string;
+  end_at: string;
   total_amount: number;
   courses: { title: string } | null;
+  learner: {
+    first_name: string;
+    last_name: string;
+    nickname: string | null;
+    phone: string | null;
+    line_id: string | null;
+    profile_image_url: string | null;
+  } | null;
 };
 
 export default function TutorDashboardPage() {
@@ -78,15 +90,13 @@ export default function TutorDashboardPage() {
   const [isPending, setIsPending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ข้อมูลชื่อและคำนำหน้าชื่อจากตาราง users
   const [prefix, setPrefix] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
 
   const [courses, setCourses] = useState<Course[]>([]);
-  const [recentBookings, setRecentBookings] = useState<BookingNotification[]>([]); // State เก็บข้อมูลแจ้งเตือน
+  const [recentBookings, setRecentBookings] = useState<BookingNotification[]>([]);
 
-  // ข้อมูลเวลาว่างเปิดสอนจากตาราง availability
   const [availabilities, setAvailabilities] = useState<AvailabilitySlot[]>([]);
   const [slotDate, setSlotDate] = useState("");
   const [slotStartTime, setSlotStartTime] = useState("13:00");
@@ -154,16 +164,14 @@ export default function TutorDashboardPage() {
                 reviewCount: tutorProfile.review_count || 0,
               }));
 
-              const { data: coursesData, error: coursesError } = await supabase
+              const { data: coursesData } = await supabase
                 .from("courses")
                 .select("*")
                 .eq("tutor_id", session.user.id)
                 .order("created_at", { ascending: false });
 
-              if (coursesError) throw coursesError;
               if (coursesData) setCourses(coursesData);
 
-              // ดึงตารางเวลาว่างของติวเตอร์จากตาราง availability
               const { data: availData } = await supabase
                 .from("availability")
                 .select("*")
@@ -174,7 +182,7 @@ export default function TutorDashboardPage() {
                 setAvailabilities(availData as AvailabilitySlot[]);
               }
 
-              // --- เพิ่มใหม่: ดึงข้อมูลการจอง 5 รายการล่าสุดมาแสดงเป็นแจ้งเตือน ---
+              // --- ดึงข้อมูลการจอง และข้อมูลติดต่อผู้เรียน (Learner) ---
               const { data: bookingsData } = await supabase
                 .from("bookings")
                 .select(`
@@ -182,15 +190,62 @@ export default function TutorDashboardPage() {
                   status,
                   created_at,
                   start_at,
+                  end_at,
                   total_amount,
+                  learner_id,
                   courses ( title )
                 `)
                 .eq("tutor_id", session.user.id)
                 .order("created_at", { ascending: false })
-                .limit(5);
+                .limit(10); // ดึงมา 10 รายการล่าสุด
 
-              if (bookingsData) {
-                setRecentBookings(bookingsData as unknown as BookingNotification[]);
+              if (bookingsData && bookingsData.length > 0) {
+                // หา ID ของผู้เรียนทั้งหมดที่ไม่ซ้ำกัน
+                const learnerIds = [
+                  ...new Set(bookingsData.map((b) => b.learner_id)),
+                ];
+                
+                // ดึงข้อมูลชื่อ เบอร์โทร และ Line ID จากตาราง users
+                const { data: learnersData } = await supabase
+                  .from("users")
+                  .select("id, first_name, last_name, nickname, phone, line_id, profile_image_url")
+                  .in("id", learnerIds);
+
+                // นำข้อมูลผู้เรียนมาประกบเข้ากับการจอง
+                // นำข้อมูลผู้เรียนมาประกบเข้ากับการจอง และกำหนด Type ให้ถูกต้อง
+const formattedBookings: BookingNotification[] = bookingsData.map((b) => {
+  const learner = learnersData?.find((l) => l.id === b.learner_id);
+  
+  return {
+    id: b.id,
+    status: b.status,
+    created_at: b.created_at,
+    start_at: b.start_at,
+    end_at: b.end_at,
+    total_amount: b.total_amount,
+    // กันเหนียวเผื่อ Supabase คืนค่า relation มาเป็น Array
+    courses: (Array.isArray(b.courses) ? b.courses[0] : b.courses) as { title: string } | null,
+    learner: learner
+      ? {
+          first_name: learner.first_name,
+          last_name: learner.last_name,
+          nickname: learner.nickname,
+          phone: learner.phone,
+          line_id: learner.line_id,
+          profile_image_url: learner.profile_image_url,
+        }
+      : null,
+  };
+});
+
+setRecentBookings(formattedBookings);
+
+                setRecentBookings(formattedBookings);
+                
+                // คำนวณสถิตินักเรียนและรายได้คร่าวๆ
+                const uniqueStudents = new Set(bookingsData.map(b => b.learner_id)).size;
+                const totalRevenue = bookingsData.reduce((acc, b) => acc + (b.total_amount || 0), 0);
+                setStats(prev => ({ ...prev, students: uniqueStudents, revenue: totalRevenue }));
               }
             } else {
               setIsPending(true);
@@ -198,14 +253,12 @@ export default function TutorDashboardPage() {
           }
         }
 
-        // ดึงข้อมูลรหัสวิชา (code) และชื่อวิชา (name) ทั้งหมด
-        const { data: subjectsData, error: subjectsError } = await supabase
+        const { data: subjectsData } = await supabase
           .from("master_subjects")
           .select("id, code, name, category")
           .order("code", { ascending: true })
           .range(0, 2000);
 
-        if (subjectsError) throw subjectsError;
         if (subjectsData) setMasterSubjects(subjectsData);
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -456,7 +509,6 @@ export default function TutorDashboardPage() {
     );
   }
 
-  // --- สถานะรอการตรวจสอบ ---
   if (isPending) {
     return (
       <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 p-4">
@@ -492,7 +544,7 @@ export default function TutorDashboardPage() {
     );
   }
 
-  // --- แดชบอร์ดสำหรับติวเตอร์ที่ผ่านการอนุมัติแล้ว ---
+  // --- แดชบอร์ดติวเตอร์ ---
   if (isTutor) {
     const days = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."];
 
@@ -534,7 +586,7 @@ export default function TutorDashboardPage() {
                 <Wallet className="w-7 h-7" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-500">รายได้สะสม</p>
+                <p className="text-sm font-medium text-gray-500">รายได้สะสม (โดยประมาณ)</p>
                 <h3 className="text-2xl font-bold text-gray-900">
                   ฿{stats.revenue.toLocaleString()}
                 </h3>
@@ -546,7 +598,7 @@ export default function TutorDashboardPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-500">
-                  นักเรียนที่สอน
+                  นักเรียนที่จองสอน
                 </p>
                 <h3 className="text-2xl font-bold text-gray-900">
                   {stats.students}{" "}
@@ -633,11 +685,11 @@ export default function TutorDashboardPage() {
               </div>
             </div>
 
-            {/* === อัปเดตส่วนแสดงการแจ้งเตือนล่าสุด === */}
-            <div className="bg-white p-8 rounded-4xl border border-gray-100 shadow-sm flex flex-col h-full">
-              <div className="flex items-center justify-between mb-6">
+            {/* === อัปเดตส่วนแสดงการแจ้งเตือนล่าสุด & ข้อมูลติดต่อผู้เรียน === */}
+            <div className="bg-white p-6 md:p-8 rounded-4xl border border-gray-100 shadow-sm flex flex-col h-full max-h-100">
+              <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-gray-900">
-                  แจ้งเตือนล่าสุด
+                  รายการคนจองล่าสุด
                 </h3>
                 {recentBookings.length > 0 && (
                   <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
@@ -647,39 +699,72 @@ export default function TutorDashboardPage() {
               </div>
 
               {recentBookings.length > 0 ? (
-                <div className="space-y-4 overflow-y-auto pr-1">
+                <div className="space-y-4 overflow-y-auto pr-2 pb-2 custom-scrollbar">
                   {recentBookings.map((booking) => {
-                    const isPending =
-                      !booking.status || booking.status === "pending";
+                    const isPending = !booking.status || booking.status === "pending";
+                    
+                    const start = new Date(booking.start_at);
+                    const end = new Date(booking.end_at);
+                    const dateStr = start.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+                    const timeStr = `${start.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} - ${end.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`;
+
                     return (
                       <div
                         key={booking.id}
-                        className="flex gap-3 p-3.5 rounded-2xl bg-gray-50 border border-gray-100 hover:bg-gray-100/70 transition-colors"
+                        className="p-4 rounded-2xl bg-white border border-gray-200 shadow-xs hover:border-emerald-300 transition-colors"
                       >
-                        <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                            isPending
-                              ? "bg-amber-100 text-amber-600"
-                              : "bg-emerald-100 text-emerald-600"
-                          }`}
-                        >
-                          <Clock className="w-5 h-5" />
+                        <div className="flex items-start gap-3">
+                          {/* Profile Image */}
+                          <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 overflow-hidden relative">
+                            {booking.learner?.profile_image_url ? (
+                              <Image 
+                                src={booking.learner.profile_image_url} 
+                                alt="Learner"
+                                fill 
+                                unoptimized 
+                                className="object-cover"
+                              />
+                            ) : (
+                              <span className="font-bold">{booking.learner?.first_name?.charAt(0) || "?"}</span>
+                            )}
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-start gap-2">
+                              <p className="text-sm font-bold text-gray-900 truncate">
+                                {booking.learner?.first_name || "ไม่ระบุชื่อ"}{" "}
+                                {booking.learner?.nickname ? `(${booking.learner.nickname})` : ""}
+                              </p>
+                              {isPending ? (
+                                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full shrink-0">รอโอนเงิน</span>
+                              ) : (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full shrink-0">ชำระแล้ว</span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">
+                              คอร์ส: {booking.courses?.title}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold text-gray-900 truncate">
-                            การจอง:{" "}
-                            {booking.courses?.title || "ไม่ระบุชื่อคอร์ส"}
-                          </p>
-                          <p className="text-[11px] text-gray-500 mt-1">
-                            เวลาเรียน:{" "}
-                            {new Date(booking.start_at).toLocaleDateString(
-                              "th-TH",
-                            )}{" "}
-                            • ยอด ฿{booking.total_amount}
-                          </p>
-                          <p className="text-[10px] text-gray-400 mt-0.5 font-medium">
-                            {new Date(booking.created_at).toLocaleString("th-TH")}
-                          </p>
+
+                        {/* Contact Info Box */}
+                        <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                          <div className="flex items-center gap-1.5 text-gray-600">
+                            <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+                            <span className="truncate">{dateStr}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-gray-600">
+                            <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+                            <span className="truncate">{timeStr}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
+                            <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+                            <span className="truncate font-medium text-gray-900 select-all">Line: {booking.learner?.line_id || "-"}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
+                            <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+                            <span className="truncate font-medium text-gray-900 select-all">{booking.learner?.phone || "-"}</span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -694,7 +779,6 @@ export default function TutorDashboardPage() {
             </div>
           </div>
 
-          {/* === ส่วนจัดการเวลาว่างของติวเตอร์ (Availability) === */}
           <div className="bg-white p-6 sm:p-8 rounded-4xl border border-gray-100 shadow-sm space-y-6">
             <div>
               <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -817,7 +901,6 @@ export default function TutorDashboardPage() {
             )}
           </div>
 
-          {/* === จัดการคอร์สเรียน (เพิ่มส่วนแสดงรูปหน้าปก 16:9 และป้าย Level) === */}
           <div>
             <div className="flex items-center justify-between mb-6 mt-4 px-2">
               <h3 className="text-xl font-bold text-gray-900">
@@ -834,7 +917,6 @@ export default function TutorDashboardPage() {
                   >
                     <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 z-10"></div>
 
-                    {/* ส่วนแสดงรูปหน้าปกคอร์ส (สัดส่วน 16:9) */}
                     <div className="relative aspect-video w-full bg-linear-to-br from-emerald-50 via-teal-50 to-emerald-100/70 overflow-hidden border-b border-gray-100">
                       {course.cover_image_url ? (
                         <Image
@@ -853,7 +935,6 @@ export default function TutorDashboardPage() {
                         </div>
                       )}
 
-                      {/* ป้ายระดับเนื้อหา (Level) มุมขวาล่างของรูป */}
                       {course.level && (
                         <div className="absolute bottom-3 right-3">
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-black/70 text-white backdrop-blur-xs">
@@ -864,7 +945,6 @@ export default function TutorDashboardPage() {
                       )}
                     </div>
 
-                    {/* รายละเอียดคอร์ส */}
                     <div className="p-6 flex-1 flex flex-col">
                       <div className="flex justify-between items-start mb-4">
                         <span className="inline-block px-3.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full">
@@ -935,7 +1015,6 @@ export default function TutorDashboardPage() {
     );
   }
 
-  // --- หน้าฟอร์มสมัครติวเตอร์ (ค้นหารหัสวิชา+ชื่อวิชาแบบพิมพ์ได้) ---
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 py-12 px-4">
       <div className="absolute inset-0 pointer-events-none">
@@ -1034,7 +1113,6 @@ export default function TutorDashboardPage() {
 
           <hr className="border-gray-100" />
 
-          {/* ================= ส่วนค้นหาและเลือกรายวิชาแบบพิมพ์ค้นหาได้ ================= */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <label className="block text-sm font-semibold text-gray-700 ml-1">
@@ -1068,7 +1146,6 @@ export default function TutorDashboardPage() {
                     key={index}
                     className="flex items-start gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-200/80"
                   >
-                    {/* ช่องพิมพ์ค้นหารหัสวิชาหรือชื่อวิชา (Combobox) */}
                     <div className="flex-1 relative">
                       <div className="relative">
                         <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1090,7 +1167,7 @@ export default function TutorDashboardPage() {
                             newSubjects[index] = {
                               ...newSubjects[index],
                               searchText: val,
-                              subject_id: "", // รีเซ็ต ID จนกว่าจะคลิกเลือกรายการใหม่
+                              subject_id: "", 
                               isOpen: true,
                             };
                             setSelectedSubjects(newSubjects);
@@ -1116,7 +1193,6 @@ export default function TutorDashboardPage() {
                         )}
                       </div>
 
-                      {/* รายการ Dropdown ที่กรองตามคำค้นหา */}
                       {subject.isOpen && (
                         <div className="absolute z-30 mt-1.5 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto divide-y divide-gray-50">
                           {filteredList.length > 0 ? (
@@ -1125,7 +1201,7 @@ export default function TutorDashboardPage() {
                                 type="button"
                                 key={ms.id}
                                 onMouseDown={(e) => {
-                                  e.preventDefault(); // ป้องกัน input เสีย focus ก่อนคลิกเสร็จ
+                                  e.preventDefault(); 
                                   handleSelectSubject(index, ms);
                                 }}
                                 className={`w-full text-left px-3.5 py-2.5 text-sm hover:bg-emerald-50 transition-colors flex items-center gap-2.5 ${
@@ -1149,7 +1225,6 @@ export default function TutorDashboardPage() {
                       )}
                     </div>
 
-                    {/* ช่องกรอกเกรด */}
                     <div className="w-28 sm:w-32 shrink-0">
                       <input
                         type="text"
@@ -1181,7 +1256,6 @@ export default function TutorDashboardPage() {
               แล้วคลิกเลือกรายวิชาจากรายการที่แสดงขึ้นมา
             </p>
           </div>
-          {/* ===================================================================== */}
 
           <hr className="border-gray-100" />
 
