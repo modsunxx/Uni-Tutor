@@ -20,6 +20,8 @@ import {
   GraduationCap,
   Receipt,
   ExternalLink,
+  Star,
+  X,
 } from "lucide-react";
 
 type PaymentRecord = {
@@ -29,6 +31,13 @@ type PaymentRecord = {
   slip_url: string | null;
   status?: string | null;
   created_at: string;
+};
+
+type ReviewRecord = {
+  id: number;
+  booking_id: number;
+  rating: number;
+  comment: string | null;
 };
 
 type BookingItem = {
@@ -58,24 +67,33 @@ type BookingItem = {
     profile_image_url: string | null;
   } | null;
   payment?: PaymentRecord | null;
+  review?: ReviewRecord | null; // เพิ่มฟิลด์เก็บข้อมูลรีวิว
 };
 
 export default function LearnerDashboardPage() {
   const supabase = createClient();
   const router = useRouter();
 
+  const [currentUserId, setCurrentUserId] = useState("");
   const [learnerName, setLearnerName] = useState("");
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // State สำหรับอัปโหลดสลิปของแต่ละรายการจอง
   const [selectedFiles, setSelectedFiles] = useState<Record<number, File>>({});
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
   const [uploadingBookingId, setUploadingBookingId] = useState<number | null>(
     null,
   );
   const [uploadSuccessId, setUploadSuccessId] = useState<number | null>(null);
+
+  // States สำหรับกล่อง Review Modal
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [reviewBooking, setReviewBooking] = useState<BookingItem | null>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewHover, setReviewHover] = useState(0);
+  const [reviewComment, setReviewComment] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   useEffect(() => {
     const fetchLearnerDashboard = async () => {
@@ -91,7 +109,8 @@ export default function LearnerDashboardPage() {
           return;
         }
 
-        // 1. ดึงชื่อผู้เรียน
+        setCurrentUserId(session.user.id);
+
         const { data: userData } = await supabase
           .from("users")
           .select("first_name, last_name, nickname")
@@ -104,7 +123,6 @@ export default function LearnerDashboardPage() {
           );
         }
 
-        // 2. ดึงรายการจองทั้งหมดของผู้เรียนจากตาราง bookings
         const { data: bookingsData, error: bookingsError } = await supabase
           .from("bookings")
           .select(
@@ -133,24 +151,31 @@ export default function LearnerDashboardPage() {
           );
           const bookingIds = bookingsData.map((b) => b.id);
 
-          // 3. ดึงข้อมูลติดต่อติวเตอร์จากตาราง users
-          const { data: tutorsData } = await supabase
-            .from("users")
-            .select(
-              "id, prefix, first_name, last_name, nickname, phone, line_id, profile_image_url",
-            )
-            .in("id", tutorIds);
-
-          // 4. ดึงข้อมูลการแนบสลิปจากตาราง payments
-          const { data: paymentsData } = await supabase
-            .from("payments")
-            .select("*")
-            .in("booking_id", bookingIds);
+          const [
+            { data: tutorsData },
+            { data: paymentsData },
+            { data: reviewsData },
+          ] = await Promise.all([
+            supabase
+              .from("users")
+              .select(
+                "id, prefix, first_name, last_name, nickname, phone, line_id, profile_image_url",
+              )
+              .in("id", tutorIds),
+            supabase.from("payments").select("*").in("booking_id", bookingIds),
+            supabase
+              .from("reviews")
+              .select("id, booking_id, rating, comment")
+              .in("booking_id", bookingIds), // ดึงข้อมูลรีวิวของทุกการจอง
+          ]);
 
           const enrichedBookings: BookingItem[] = bookingsData.map((b) => {
             const matchedTutor = tutorsData?.find((t) => t.id === b.tutor_id);
             const matchedPayment = paymentsData?.find(
               (p) => Number(p.booking_id) === Number(b.id),
+            );
+            const matchedReview = reviewsData?.find(
+              (r) => Number(r.booking_id) === Number(b.id),
             );
             const courseObj = Array.isArray(b.courses)
               ? b.courses[0]
@@ -161,6 +186,7 @@ export default function LearnerDashboardPage() {
               courses: courseObj || null,
               tutor_user: matchedTutor || null,
               payment: (matchedPayment as PaymentRecord) || null,
+              review: (matchedReview as ReviewRecord) || null,
             };
           });
 
@@ -210,7 +236,6 @@ export default function LearnerDashboardPage() {
       const ext = file.name.split(".").pop();
       const filePath = `booking-${booking.id}-${Date.now()}.${ext}`;
 
-      // 1. อัปโหลดสลิปขึ้น Storage Bucket ชื่อ slips
       const { error: uploadError } = await supabase.storage
         .from("slips")
         .upload(filePath, file, { cacheControl: "3600", upsert: true });
@@ -221,7 +246,6 @@ export default function LearnerDashboardPage() {
         data: { publicUrl },
       } = supabase.storage.from("slips").getPublicUrl(filePath);
 
-      // 2. บันทึกหรืออัปเดตข้อมูลในตาราง payments
       if (booking.payment?.id) {
         const { data: updatedPayment, error: updateError } = await supabase
           .from("payments")
@@ -273,6 +297,57 @@ export default function LearnerDashboardPage() {
       );
     } finally {
       setUploadingBookingId(null);
+    }
+  };
+
+  // เปิด Modal รีวิว
+  const handleOpenReview = (booking: BookingItem) => {
+    setReviewBooking(booking);
+    setReviewRating(0);
+    setReviewComment("");
+    setReviewModalOpen(true);
+  };
+
+  // ส่งข้อมูลรีวิวขึ้น Supabase
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewBooking || reviewRating === 0) {
+      alert("กรุณาให้คะแนนดาวก่อนกดยืนยันครับ");
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      const { data: newReview, error } = await supabase
+        .from("reviews")
+        .insert({
+          booking_id: reviewBooking.id,
+          reviewer_id: currentUserId,
+          tutor_id: reviewBooking.tutor_id,
+          rating: reviewRating,
+          comment: reviewComment.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // อัปเดตสถานะในหน้าจอว่ารีวิวแล้ว
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === reviewBooking.id
+            ? { ...b, review: newReview as ReviewRecord }
+            : b,
+        ),
+      );
+
+      setReviewModalOpen(false);
+      alert("ขอบคุณสำหรับคำติชมและคะแนนรีวิวครับ!");
+    } catch (err) {
+      console.error("Error submitting review:", err);
+      alert("ไม่สามารถบันทึกรีวิวได้ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
 
@@ -332,9 +407,7 @@ export default function LearnerDashboardPage() {
 
       {/* === Content Section === */}
       <div className="max-w-6xl mx-auto px-4 -mt-14 relative z-20 space-y-8">
-        {/* การ์ดสรุป 3 ใบ + ข้อมูลบัญชีแอดมิน */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* สรุปการจอง */}
           <div className="bg-white p-6 rounded-4xl border border-gray-100 shadow-lg flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase">
@@ -342,7 +415,9 @@ export default function LearnerDashboardPage() {
               </p>
               <h3 className="text-3xl font-extrabold text-gray-900 mt-1">
                 {bookings.length}{" "}
-                <span className="text-sm font-medium text-gray-500">รายการ</span>
+                <span className="text-sm font-medium text-gray-500">
+                  รายการ
+                </span>
               </h3>
               <div className="flex items-center gap-3 mt-2 text-xs font-semibold">
                 <span className="text-emerald-600">
@@ -358,7 +433,6 @@ export default function LearnerDashboardPage() {
             </div>
           </div>
 
-          {/* ข้อมูลบัญชีกลางของ Admin สำหรับโอนเงิน */}
           <div className="lg:col-span-2 bg-white p-6 rounded-4xl border border-emerald-200/80 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-4">
               <div className="w-14 h-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-md">
@@ -410,6 +484,9 @@ export default function LearnerDashboardPage() {
               {bookings.map((booking) => {
                 const start = new Date(booking.start_at);
                 const end = new Date(booking.end_at);
+                const now = new Date();
+                const isFinished = now >= end; // ตรวจสอบว่าถึงเวลาเรียนเสร็จแล้วหรือยัง
+
                 const dateStr = start.toLocaleDateString("th-TH", {
                   weekday: "long",
                   day: "numeric",
@@ -431,17 +508,22 @@ export default function LearnerDashboardPage() {
                 const hasSlip = Boolean(booking.payment?.slip_url);
                 const previewImg =
                   previewUrls[booking.id] || booking.payment?.slip_url || null;
+                const hasReviewed = Boolean(booking.review);
 
                 return (
                   <div
                     key={booking.id}
-                    className="bg-white rounded-4xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-6 sm:p-8"
+                    className={`bg-white rounded-4xl border shadow-sm transition-all p-6 sm:p-8 ${
+                      isFinished && !hasReviewed
+                        ? "border-amber-300 ring-2 ring-amber-100"
+                        : "border-gray-100 hover:shadow-md"
+                    }`}
                   >
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                       {/* ข้อมูลคอร์สและวันเวลาเรียน (2 คอลัมน์) */}
                       <div className="lg:col-span-2 flex flex-col justify-between space-y-4">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">
                               {booking.courses?.teaching_format || "Online"}
                             </span>
@@ -464,6 +546,11 @@ export default function LearnerDashboardPage() {
                                 </>
                               )}
                             </span>
+                            {isFinished && (
+                              <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200">
+                                🏁 หมดเวลาเรียนแล้ว
+                              </span>
+                            )}
                           </div>
 
                           <span className="text-xs text-gray-400">
@@ -492,7 +579,7 @@ export default function LearnerDashboardPage() {
                           </div>
 
                           {booking.note && (
-                            <p className="text-xs text-gray-500 mt-2.5 bg-gray-50/70 px-3.5 py-2 rounded-xl">
+                            <p className="text-xs text-gray-500 mt-2.5 bg-gray-50/70 px-3.5 py-2 rounded-xl border border-gray-100/50">
                               <b>ข้อความถึงติวเตอร์:</b> {booking.note}
                             </p>
                           )}
@@ -545,69 +632,130 @@ export default function LearnerDashboardPage() {
                         </div>
                       </div>
 
-                      {/* กล่องชำระเงินและอัปโหลดสลิป (1 คอลัมน์) */}
-                      <div className="bg-gray-50/80 border border-gray-200/80 rounded-3xl p-5 flex flex-col justify-between space-y-4">
-                        <div className="flex items-baseline justify-between border-b border-gray-200/70 pb-3">
-                          <span className="text-xs font-semibold text-gray-500">
-                            ยอดโอนชำระทั้งหมด
-                          </span>
-                          <span className="text-2xl font-extrabold text-emerald-600">
-                            ฿{Number(booking.total_amount).toLocaleString()}
-                          </span>
-                        </div>
-
-                        {previewImg ? (
-                          <div className="relative h-40 w-full rounded-2xl overflow-hidden border border-emerald-200 bg-white">
-                            <Image
-                              src={previewImg}
-                              alt="Payment Slip"
-                              fill
-                              unoptimized
-                              className="object-contain"
-                            />
-                          </div>
-                        ) : (
-                          <div className="h-32 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 p-3 text-center">
-                            <UploadCloud className="w-7 h-7 mb-1 text-emerald-500" />
-                            <span className="text-xs font-medium">
-                              ยังไม่ได้แนบหลักฐานการโอนเงิน
-                            </span>
-                          </div>
-                        )}
-
-                        {uploadSuccessId === booking.id && (
-                          <div className="text-xs font-semibold text-emerald-700 bg-emerald-100/80 px-3 py-2 rounded-xl text-center">
-                            ✓ ส่งสลิปโอนเงินให้แอดมินเรียบร้อยแล้ว!
-                          </div>
-                        )}
-
-                        <div className="space-y-2">
-                          <label className="block w-full text-center py-2.5 px-4 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold cursor-pointer transition-colors">
-                            {hasSlip
-                              ? "เปลี่ยนไฟล์รูปสลิปใหม่"
-                              : "คลิกเลือกไฟล์รูปสลิป (.JPG, .PNG)"}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleFileChange(booking.id, e)}
-                              className="sr-only"
-                            />
-                          </label>
-
-                          {selectedFiles[booking.id] && (
-                            <button
-                              type="button"
-                              disabled={uploadingBookingId === booking.id}
-                              onClick={() => handleUploadSlip(booking)}
-                              className="w-full py-2.5 px-4 rounded-xl bg-[#1a1a1a] hover:bg-black text-white text-xs font-bold shadow-md transition-all disabled:opacity-50"
-                            >
-                              {uploadingBookingId === booking.id
-                                ? "กำลังอัปโหลดสลิป..."
-                                : "ยืนยันการส่งสลิปโอนเงิน"}
-                            </button>
+                      {/* กล่องชำระเงิน หรือ กล่องรีวิวเมื่อเรียนจบ */}
+                      {isFinished ? (
+                        <div
+                          className={`rounded-3xl p-5 flex flex-col justify-center items-center text-center border space-y-3 ${
+                            hasReviewed
+                              ? "bg-emerald-50/50 border-emerald-100"
+                              : "bg-amber-50 border-amber-200"
+                          }`}
+                        >
+                          {hasReviewed ? (
+                            <>
+                              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-2">
+                                <CheckCircle2 className="w-6 h-6" />
+                              </div>
+                              <h4 className="font-bold text-emerald-800 text-sm">
+                                ขอบคุณสำหรับการรีวิว!
+                              </h4>
+                              <div className="flex items-center justify-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star
+                                    key={star}
+                                    className={`w-4 h-4 ${
+                                      star <= (booking.review?.rating || 0)
+                                        ? "fill-amber-400 text-amber-400"
+                                        : "text-gray-300"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              {booking.review?.comment && (
+                                <p className="text-xs text-emerald-700 mt-2 bg-white px-3 py-2 rounded-lg border border-emerald-100 w-full truncate">
+                                  &quot;{booking.review.comment}&quot;
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="w-12 h-12 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mb-1">
+                                <Star className="w-6 h-6 fill-amber-400" />
+                              </div>
+                              <h4 className="font-bold text-gray-900 text-sm">
+                                การสอนเป็นอย่างไรบ้าง?
+                              </h4>
+                              <p className="text-xs text-gray-500 mb-2">
+                                ช่วยให้คะแนนติวเตอร์
+                                เพื่อเป็นกำลังใจและแนวทางให้ผู้เรียนคนอื่นๆ
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReview(booking)}
+                                className="w-full py-3 rounded-full bg-[#1a1a1a] hover:bg-black text-white text-xs font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                              >
+                                <Star className="w-4 h-4" />
+                                รีวิวและให้คะแนนติวเตอร์
+                              </button>
+                            </>
                           )}
                         </div>
-                      </div>
+                      ) : (
+                        <div className="bg-gray-50/80 border border-gray-200/80 rounded-3xl p-5 flex flex-col justify-between space-y-4">
+                          <div className="flex items-baseline justify-between border-b border-gray-200/70 pb-3">
+                            <span className="text-xs font-semibold text-gray-500">
+                              ยอดโอนชำระทั้งหมด
+                            </span>
+                            <span className="text-2xl font-extrabold text-emerald-600">
+                              ฿{Number(booking.total_amount).toLocaleString()}
+                            </span>
+                          </div>
+
+                          {previewImg ? (
+                            <div className="relative h-40 w-full rounded-2xl overflow-hidden border border-emerald-200 bg-white">
+                              <Image
+                                src={previewImg}
+                                alt="Payment Slip"
+                                fill
+                                unoptimized
+                                className="object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="h-32 rounded-2xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 p-3 text-center">
+                              <UploadCloud className="w-7 h-7 mb-1 text-emerald-500" />
+                              <span className="text-xs font-medium">
+                                ยังไม่ได้แนบหลักฐานการโอนเงิน
+                              </span>
+                            </div>
+                          )}
+
+                          {uploadSuccessId === booking.id && (
+                            <div className="text-xs font-semibold text-emerald-700 bg-emerald-100/80 px-3 py-2 rounded-xl text-center">
+                              ✓ ส่งสลิปโอนเงินให้แอดมินเรียบร้อยแล้ว!
+                            </div>
+                          )}
+
+                          <div className="space-y-2">
+                            <label className="block w-full text-center py-2.5 px-4 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-700 text-xs font-bold cursor-pointer transition-colors">
+                              {hasSlip
+                                ? "เปลี่ยนไฟล์รูปสลิปใหม่"
+                                : "คลิกเลือกไฟล์รูปสลิป (.JPG, .PNG)"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) =>
+                                  handleFileChange(booking.id, e)
+                                }
+                                className="sr-only"
+                              />
+                            </label>
+
+                            {selectedFiles[booking.id] && (
+                              <button
+                                type="button"
+                                disabled={uploadingBookingId === booking.id}
+                                onClick={() => handleUploadSlip(booking)}
+                                className="w-full py-2.5 px-4 rounded-xl bg-[#1a1a1a] hover:bg-black text-white text-xs font-bold shadow-md transition-all disabled:opacity-50"
+                              >
+                                {uploadingBookingId === booking.id
+                                  ? "กำลังอัปโหลดสลิป..."
+                                  : "ยืนยันการส่งสลิปโอนเงิน"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -622,7 +770,8 @@ export default function LearnerDashboardPage() {
                 ยังไม่มีประวัติการจองคอร์สเรียน
               </h3>
               <p className="text-gray-500 text-sm mb-6">
-                ค้นหารายวิชาที่ต้องการติว แล้วเลือกวัน-เวลาที่สะดวกเพื่อนัดเรียนกับติวเตอร์ได้เลย!
+                ค้นหารายวิชาที่ต้องการติว
+                แล้วเลือกวัน-เวลาที่สะดวกเพื่อนัดเรียนกับติวเตอร์ได้เลย!
               </p>
               <Link
                 href="/search"
@@ -635,6 +784,90 @@ export default function LearnerDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* === Modal รีวิวและให้คะแนน === */}
+      {reviewModalOpen && reviewBooking && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center px-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-4xl w-full max-w-md shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Star className="w-5 h-5 text-amber-500 fill-amber-400" />
+                รีวิวการสอน
+              </h3>
+              <button
+                type="button"
+                onClick={() => setReviewModalOpen(false)}
+                className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-200 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitReview} className="p-6 sm:p-8 space-y-6">
+              <div className="text-center">
+                <p className="text-sm font-semibold text-gray-500 mb-1">
+                  วิชา {reviewBooking.courses?.title}
+                </p>
+                <p className="text-gray-400 text-xs mb-4">
+                  สอนโดย:{" "}
+                  {reviewBooking.tutor_user?.nickname ||
+                    reviewBooking.tutor_user?.first_name ||
+                    "ติวเตอร์"}
+                </p>
+
+                <div className="flex items-center justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      type="button"
+                      key={star}
+                      onMouseEnter={() => setReviewHover(star)}
+                      onMouseLeave={() => setReviewHover(0)}
+                      onClick={() => setReviewRating(star)}
+                      className="p-1 transition-transform hover:scale-110 active:scale-95"
+                    >
+                      <Star
+                        className={`w-10 h-10 transition-colors ${
+                          star <= (reviewHover || reviewRating)
+                            ? "fill-amber-400 text-amber-400"
+                            : "text-gray-200"
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-amber-600 font-bold mt-3 h-4">
+                  {reviewRating > 0
+                    ? `ให้ ${reviewRating} ดาว`
+                    : "คลิกเพื่อเลือกคะแนน"}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
+                  ความคิดเห็นเพิ่มเติม (ไม่บังคับ)
+                </label>
+                <textarea
+                  rows={3}
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="ติวเตอร์สอนเข้าใจง่าย เป็นกันเอง หรือมีข้อเสนอแนะใดๆ..."
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-none bg-gray-50/50 text-sm text-gray-900 placeholder:text-gray-400"
+                ></textarea>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmittingReview || reviewRating === 0}
+                  className="w-full py-3.5 px-4 rounded-full bg-[#1a1a1a] hover:bg-black text-white text-sm font-bold shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                >
+                  {isSubmittingReview ? "กำลังบันทึก..." : "ส่งรีวิว"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

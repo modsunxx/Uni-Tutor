@@ -26,6 +26,7 @@ import {
   Phone,
   MessageCircle,
   Calendar,
+  FilePlus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -63,7 +64,6 @@ type AvailabilitySlot = {
   is_booked: boolean;
 };
 
-// อัปเดต Type ให้รองรับข้อมูลผู้เรียน (Learner)
 type BookingNotification = {
   id: number;
   status: string | null;
@@ -95,7 +95,9 @@ export default function TutorDashboardPage() {
   const [lastName, setLastName] = useState("");
 
   const [courses, setCourses] = useState<Course[]>([]);
-  const [recentBookings, setRecentBookings] = useState<BookingNotification[]>([]);
+  const [recentBookings, setRecentBookings] = useState<
+    BookingNotification[]
+  >([]);
 
   const [availabilities, setAvailabilities] = useState<AvailabilitySlot[]>([]);
   const [slotDate, setSlotDate] = useState("");
@@ -122,6 +124,14 @@ export default function TutorDashboardPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // States สำหรับ Modal ขอเพิ่มวิชาสอน
+  const [isAddSubjectModalOpen, setIsAddSubjectModalOpen] = useState(false);
+  const [addSubjectFile, setAddSubjectFile] = useState<File | null>(null);
+  const [isSubmittingAdditional, setIsSubmittingAdditional] = useState(false);
+  const [additionalSubjects, setAdditionalSubjects] = useState<SelectedSubject[]>([
+    { subject_id: "", grade: "", searchText: "", isOpen: false },
+  ]);
 
   useEffect(() => {
     const checkUserAndFetchData = async () => {
@@ -182,10 +192,10 @@ export default function TutorDashboardPage() {
                 setAvailabilities(availData as AvailabilitySlot[]);
               }
 
-              // --- ดึงข้อมูลการจอง และข้อมูลติดต่อผู้เรียน (Learner) ---
               const { data: bookingsData } = await supabase
                 .from("bookings")
-                .select(`
+                .select(
+                  `
                   id,
                   status,
                   created_at,
@@ -194,58 +204,67 @@ export default function TutorDashboardPage() {
                   total_amount,
                   learner_id,
                   courses ( title )
-                `)
+                `,
+                )
                 .eq("tutor_id", session.user.id)
                 .order("created_at", { ascending: false })
-                .limit(10); // ดึงมา 10 รายการล่าสุด
+                .limit(10);
 
               if (bookingsData && bookingsData.length > 0) {
-                // หา ID ของผู้เรียนทั้งหมดที่ไม่ซ้ำกัน
                 const learnerIds = [
                   ...new Set(bookingsData.map((b) => b.learner_id)),
                 ];
-                
-                // ดึงข้อมูลชื่อ เบอร์โทร และ Line ID จากตาราง users
+
                 const { data: learnersData } = await supabase
                   .from("users")
-                  .select("id, first_name, last_name, nickname, phone, line_id, profile_image_url")
+                  .select(
+                    "id, first_name, last_name, nickname, phone, line_id, profile_image_url",
+                  )
                   .in("id", learnerIds);
 
-                // นำข้อมูลผู้เรียนมาประกบเข้ากับการจอง
-                // นำข้อมูลผู้เรียนมาประกบเข้ากับการจอง และกำหนด Type ให้ถูกต้อง
-const formattedBookings: BookingNotification[] = bookingsData.map((b) => {
-  const learner = learnersData?.find((l) => l.id === b.learner_id);
-  
-  return {
-    id: b.id,
-    status: b.status,
-    created_at: b.created_at,
-    start_at: b.start_at,
-    end_at: b.end_at,
-    total_amount: b.total_amount,
-    // กันเหนียวเผื่อ Supabase คืนค่า relation มาเป็น Array
-    courses: (Array.isArray(b.courses) ? b.courses[0] : b.courses) as { title: string } | null,
-    learner: learner
-      ? {
-          first_name: learner.first_name,
-          last_name: learner.last_name,
-          nickname: learner.nickname,
-          phone: learner.phone,
-          line_id: learner.line_id,
-          profile_image_url: learner.profile_image_url,
-        }
-      : null,
-  };
-});
+                const formattedBookings: BookingNotification[] =
+                  bookingsData.map((b) => {
+                    const learner = learnersData?.find(
+                      (l) => l.id === b.learner_id,
+                    );
 
-setRecentBookings(formattedBookings);
+                    return {
+                      id: b.id,
+                      status: b.status,
+                      created_at: b.created_at,
+                      start_at: b.start_at,
+                      end_at: b.end_at,
+                      total_amount: b.total_amount,
+                      courses: (Array.isArray(b.courses)
+                        ? b.courses[0]
+                        : b.courses) as { title: string } | null,
+                      learner: learner
+                        ? {
+                            first_name: learner.first_name,
+                            last_name: learner.last_name,
+                            nickname: learner.nickname,
+                            phone: learner.phone,
+                            line_id: learner.line_id,
+                            profile_image_url: learner.profile_image_url,
+                          }
+                        : null,
+                    };
+                  });
 
                 setRecentBookings(formattedBookings);
-                
-                // คำนวณสถิตินักเรียนและรายได้คร่าวๆ
-                const uniqueStudents = new Set(bookingsData.map(b => b.learner_id)).size;
-                const totalRevenue = bookingsData.reduce((acc, b) => acc + (b.total_amount || 0), 0);
-                setStats(prev => ({ ...prev, students: uniqueStudents, revenue: totalRevenue }));
+
+                const uniqueStudents = new Set(
+                  bookingsData.map((b) => b.learner_id),
+                ).size;
+                const totalRevenue = bookingsData.reduce(
+                  (acc, b) => acc + (b.total_amount || 0),
+                  0,
+                );
+                setStats((prev) => ({
+                  ...prev,
+                  students: uniqueStudents,
+                  revenue: totalRevenue,
+                }));
               }
             } else {
               setIsPending(true);
@@ -348,6 +367,7 @@ setRecentBookings(formattedBookings);
     }
   };
 
+  // ฟังก์ชันสำหรับแบบฟอร์มสมัครติวเตอร์ครั้งแรก
   const addSubjectRow = () => {
     setSelectedSubjects([
       ...selectedSubjects,
@@ -392,6 +412,119 @@ setRecentBookings(formattedBookings);
     };
     setSelectedSubjects(newSubjects);
   };
+
+  // ฟังก์ชันสำหรับ Modal ขอเพิ่มวิชาสอน (ติวเตอร์เก่า)
+  const addAdditionalSubjectRow = () => {
+    setAdditionalSubjects([
+      ...additionalSubjects,
+      { subject_id: "", grade: "", searchText: "", isOpen: false },
+    ]);
+  };
+
+  const removeAdditionalSubjectRow = (index: number) => {
+    const newSubs = [...additionalSubjects];
+    newSubs.splice(index, 1);
+    setAdditionalSubjects(newSubs);
+  };
+
+  const updateAdditionalSubjectRow = <K extends keyof SelectedSubject>(
+    index: number,
+    field: K,
+    value: SelectedSubject[K],
+  ) => {
+    const newSubs = [...additionalSubjects];
+    newSubs[index] = { ...newSubs[index], [field]: value };
+    setAdditionalSubjects(newSubs);
+  };
+
+  const handleSelectAdditionalSubject = (index: number, ms: Subject) => {
+    const newSubs = [...additionalSubjects];
+    newSubs[index] = {
+      ...newSubs[index],
+      subject_id: String(ms.id),
+      searchText: `${ms.code} - ${ms.name}`,
+      isOpen: false,
+    };
+    setAdditionalSubjects(newSubs);
+  };
+
+  const handleClearAdditionalSubject = (index: number) => {
+    const newSubs = [...additionalSubjects];
+    newSubs[index] = {
+      ...newSubs[index],
+      subject_id: "",
+      searchText: "",
+      isOpen: true,
+    };
+    setAdditionalSubjects(newSubs);
+  };
+
+  // Submit การขอเพิ่มวิชาสอนสำหรับติวเตอร์ที่ผ่านแล้ว
+  const handleSubmitAdditionalSubjects = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    if (!addSubjectFile) {
+      alert("กรุณาอัปโหลดไฟล์หลักฐานผลการเรียน (Transcript) ล่าสุดด้วยครับ");
+      return;
+    }
+
+    const hasEmpty = additionalSubjects.some((s) => !s.subject_id || !s.grade);
+    if (hasEmpty) {
+      alert("กรุณาเลือกวิชาและระบุเกรดให้ครบถ้วน หรือลบแถวที่ไม่ได้ใช้ออก");
+      return;
+    }
+
+    setIsSubmittingAdditional(true);
+
+    try {
+      const fileExt = addSubjectFile.name.split(".").pop();
+      const fileName = `${user.id}-additional-${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from("transcripts")
+        .upload(fileName, addSubjectFile, { cacheControl: "3600", upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("transcripts")
+        .getPublicUrl(fileName);
+
+      // อัปเดต Transcript ล่าสุดในโปรไฟล์
+      const { error: profileError } = await supabase
+        .from("tutor_profiles")
+        .update({ transcript_url: publicUrl })
+        .eq("id", user.id);
+
+      if (profileError) throw profileError;
+
+      // เพิ่มรายวิชาลงใน tutor_verified_subjects ด้วยสถานะ pending
+      const subjectsToInsert = additionalSubjects.map((sub) => ({
+        tutor_id: user.id,
+        subject_id: parseInt(sub.subject_id),
+        grade: sub.grade.toUpperCase().trim(),
+        status: "pending",
+      }));
+
+      const { error: insertError } = await supabase
+        .from("tutor_verified_subjects")
+        .insert(subjectsToInsert);
+
+      if (insertError) throw insertError;
+
+      alert("ส่งคำขอเพิ่มวิชาสอนเรียบร้อยแล้ว รอแอดมินอนุมัติ 1-2 วันครับ");
+      setIsAddSubjectModalOpen(false);
+      setAdditionalSubjects([{ subject_id: "", grade: "", searchText: "", isOpen: false }]);
+      setAddSubjectFile(null);
+    } catch (err) {
+      console.error("Error adding subjects:", err);
+      alert("เกิดข้อผิดพลาดในการส่งคำขอ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setIsSubmittingAdditional(false);
+    }
+  };
+
 
   const handleBecomeTutor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -549,7 +682,7 @@ setRecentBookings(formattedBookings);
     const days = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."];
 
     return (
-      <main className="min-h-screen bg-gray-50 pb-16">
+      <main className="min-h-screen bg-gray-50 pb-16 relative">
         <div className="relative pt-14 pb-28 px-4 overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 rounded-b-[2.5rem] shadow-md">
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute -top-10 -right-10 w-62.5 h-62.5 bg-[#285A48] opacity-20 rounded-full"></div>
@@ -569,13 +702,22 @@ setRecentBookings(formattedBookings);
                 นี่คือสถิติและคอร์สเรียนของคุณในขณะนี้
               </p>
             </div>
-            <Link
-              href="/dashboard/tutor/courses/new"
-              className="bg-[#1a1a1a] text-white px-6 py-3 rounded-full font-semibold flex items-center gap-2 hover:bg-black transition-all shadow-xl active:scale-95"
-            >
-              <PlusCircle className="w-5 h-5" />
-              สร้างคอร์สใหม่
-            </Link>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsAddSubjectModalOpen(true)}
+                className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-5 py-3 rounded-full font-semibold flex items-center gap-2 transition-all backdrop-blur-sm"
+              >
+                <FilePlus className="w-5 h-5" />
+                ขอเพิ่มสิทธิ์วิชาสอน
+              </button>
+              <Link
+                href="/dashboard/tutor/courses/new"
+                className="bg-[#1a1a1a] text-white px-5 py-3 rounded-full font-semibold flex items-center gap-2 hover:bg-black transition-all shadow-xl active:scale-95"
+              >
+                <PlusCircle className="w-5 h-5" />
+                สร้างคอร์สใหม่
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -586,7 +728,9 @@ setRecentBookings(formattedBookings);
                 <Wallet className="w-7 h-7" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-500">รายได้สะสม (โดยประมาณ)</p>
+                <p className="text-sm font-medium text-gray-500">
+                  รายได้สะสม (โดยประมาณ)
+                </p>
                 <h3 className="text-2xl font-bold text-gray-900">
                   ฿{stats.revenue.toLocaleString()}
                 </h3>
@@ -685,7 +829,6 @@ setRecentBookings(formattedBookings);
               </div>
             </div>
 
-            {/* === อัปเดตส่วนแสดงการแจ้งเตือนล่าสุด & ข้อมูลติดต่อผู้เรียน === */}
             <div className="bg-white p-6 md:p-8 rounded-4xl border border-gray-100 shadow-sm flex flex-col h-full max-h-100">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-gray-900">
@@ -701,12 +844,22 @@ setRecentBookings(formattedBookings);
               {recentBookings.length > 0 ? (
                 <div className="space-y-4 overflow-y-auto pr-2 pb-2 custom-scrollbar">
                   {recentBookings.map((booking) => {
-                    const isPending = !booking.status || booking.status === "pending";
-                    
+                    const isPending =
+                      !booking.status || booking.status === "pending";
                     const start = new Date(booking.start_at);
                     const end = new Date(booking.end_at);
-                    const dateStr = start.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-                    const timeStr = `${start.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} - ${end.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`;
+                    const dateStr = start.toLocaleDateString("th-TH", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    });
+                    const timeStr = `${start.toLocaleTimeString("th-TH", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })} - ${end.toLocaleTimeString("th-TH", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}`;
 
                     return (
                       <div
@@ -714,31 +867,38 @@ setRecentBookings(formattedBookings);
                         className="p-4 rounded-2xl bg-white border border-gray-200 shadow-xs hover:border-emerald-300 transition-colors"
                       >
                         <div className="flex items-start gap-3">
-                          {/* Profile Image */}
                           <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 overflow-hidden relative">
                             {booking.learner?.profile_image_url ? (
-                              <Image 
-                                src={booking.learner.profile_image_url} 
+                              <Image
+                                src={booking.learner.profile_image_url}
                                 alt="Learner"
-                                fill 
-                                unoptimized 
+                                fill
+                                unoptimized
                                 className="object-cover"
                               />
                             ) : (
-                              <span className="font-bold">{booking.learner?.first_name?.charAt(0) || "?"}</span>
+                              <span className="font-bold">
+                                {booking.learner?.first_name?.charAt(0) || "?"}
+                              </span>
                             )}
                           </div>
-                          
+
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-start gap-2">
                               <p className="text-sm font-bold text-gray-900 truncate">
                                 {booking.learner?.first_name || "ไม่ระบุชื่อ"}{" "}
-                                {booking.learner?.nickname ? `(${booking.learner.nickname})` : ""}
+                                {booking.learner?.nickname
+                                  ? `(${booking.learner.nickname})`
+                                  : ""}
                               </p>
                               {isPending ? (
-                                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full shrink-0">รอโอนเงิน</span>
+                                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full shrink-0">
+                                  รอโอนเงิน
+                                </span>
                               ) : (
-                                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full shrink-0">ชำระแล้ว</span>
+                                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full shrink-0">
+                                  ชำระแล้ว
+                                </span>
                               )}
                             </div>
                             <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">
@@ -747,23 +907,26 @@ setRecentBookings(formattedBookings);
                           </div>
                         </div>
 
-                        {/* Contact Info Box */}
                         <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
                           <div className="flex items-center gap-1.5 text-gray-600">
-                            <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+                            <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                             <span className="truncate">{dateStr}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-gray-600">
-                            <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+                            <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                             <span className="truncate">{timeStr}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
-                            <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
-                            <span className="truncate font-medium text-gray-900 select-all">Line: {booking.learner?.line_id || "-"}</span>
+                            <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="truncate font-medium text-gray-900 select-all">
+                              Line: {booking.learner?.line_id || "-"}
+                            </span>
                           </div>
                           <div className="flex items-center gap-1.5 text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
-                            <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
-                            <span className="truncate font-medium text-gray-900 select-all">{booking.learner?.phone || "-"}</span>
+                            <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="truncate font-medium text-gray-900 select-all">
+                              {booking.learner?.phone || "-"}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -786,7 +949,8 @@ setRecentBookings(formattedBookings);
                 จัดการเวลาว่างเปิดสอน (Availability)
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                เพิ่มวันและเวลาที่คุณสะดวกสอน เพื่อให้นักศึกษาเลือกกดจองเรียนในหน้าคอร์สของคุณ
+                เพิ่มวันและเวลาที่คุณสะดวกสอน
+                เพื่อให้นักศึกษาเลือกกดจองเรียนในหน้าคอร์สของคุณ
               </p>
             </div>
 
@@ -1011,10 +1175,211 @@ setRecentBookings(formattedBookings);
             )}
           </div>
         </div>
+
+        {/* Modal ขอเพิ่มสิทธิ์วิชาสอน */}
+        {isAddSubjectModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-4xl w-full max-w-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gray-50/50">
+                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <FilePlus className="w-6 h-6 text-emerald-600" />
+                  ขอเพิ่มสิทธิ์วิชาที่สอนได้
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsAddSubjectModalOpen(false)}
+                  className="p-2 text-gray-400 hover:bg-gray-200 hover:text-gray-700 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+                <form id="add-subject-form" onSubmit={handleSubmitAdditionalSubjects} className="space-y-6">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-semibold text-gray-700 ml-1">
+                        เลือกวิชาที่ต้องการเพิ่มสิทธิ์ <span className="text-red-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={addAdditionalSubjectRow}
+                        className="text-sm flex items-center gap-1 text-emerald-700 hover:bg-emerald-100 font-semibold bg-emerald-50 px-3.5 py-1.5 rounded-full transition-colors"
+                      >
+                        <Plus className="w-4 h-4" /> เพิ่มวิชา
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+  {additionalSubjects.map((subject, index) => {
+    const query = subject.searchText.trim().toLowerCase();
+    const filteredList = masterSubjects.filter((ms) => {
+      const fullLabel = `${ms.code || ""} - ${ms.name}`.toLowerCase();
+      return (
+        (ms.code && ms.code.toLowerCase().includes(query)) ||
+        ms.name.toLowerCase().includes(query) ||
+        fullLabel.includes(query)
+      );
+    });
+
+    return (
+      <div
+        key={index}
+        className="flex items-start gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-200/80"
+      >
+        <div className="flex-1 relative">
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={subject.searchText}
+              onFocus={() => updateAdditionalSubjectRow(index, "isOpen", true)}
+              onBlur={() => {
+                setTimeout(() => updateAdditionalSubjectRow(index, "isOpen", false), 200);
+              }}
+              onChange={(e) => {
+                const val = e.target.value;
+                const newSubs = [...additionalSubjects];
+                newSubs[index] = {
+                  ...newSubs[index],
+                  searchText: val,
+                  subject_id: "",
+                  isOpen: true,
+                };
+                setAdditionalSubjects(newSubs);
+              }}
+              placeholder="พิมพ์ค้นหาวิชา..."
+              className={`w-full pl-9 pr-9 py-2.5 border rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm text-gray-900 placeholder:text-gray-400 transition-colors ${
+                subject.subject_id
+                  ? "border-emerald-400 bg-emerald-50/20 font-bold"
+                  : "border-gray-300 bg-white"
+              }`}
+            />
+            {subject.searchText ? (
+              <button
+                type="button"
+                onClick={() => handleClearAdditionalSubject(index)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : (
+              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            )}
+          </div>
+
+          {subject.isOpen && (
+            <div className="absolute z-30 mt-1.5 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto divide-y divide-gray-50">
+              {filteredList.length > 0 ? (
+                filteredList.slice(0, 80).map((ms) => (
+                  <button
+                    type="button"
+                    key={ms.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectAdditionalSubject(index, ms);
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 text-sm hover:bg-emerald-50 flex items-center gap-2.5 ${
+                      String(ms.id) === subject.subject_id
+                        ? "bg-emerald-50/80 font-bold text-emerald-900"
+                        : "text-gray-800 font-medium"
+                    }`}
+                  >
+                    <span className="font-mono text-xs font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md shrink-0">
+                      {ms.code || "N/A"}
+                    </span>
+                    <span className="truncate">{ms.name}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-sm text-gray-500 text-center font-medium">
+                  ไม่พบรายวิชาที่ค้นหา
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="w-24 shrink-0">
+          <input
+            type="text"
+            required
+            placeholder="เกรด (เช่น A)"
+            value={subject.grade}
+            onChange={(e) => updateAdditionalSubjectRow(index, "grade", e.target.value)}
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm uppercase bg-white text-gray-900 placeholder:text-gray-400 font-bold transition-colors"
+          />
+        </div>
+
+        {additionalSubjects.length > 1 && (
+          <button
+            type="button"
+            onClick={() => removeAdditionalSubjectRow(index)}
+            className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl shrink-0 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    );
+  })}
+</div></div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
+                      อัปโหลดใบ Transcript ล่าสุด (เพื่อยืนยันเกรดวิชาใหม่) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="mt-1 flex justify-center px-6 pt-5 pb-5 border-2 border-gray-300 border-dashed rounded-2xl hover:border-emerald-400 transition-colors bg-gray-50">
+                      <div className="space-y-1 text-center">
+                        <UploadCloud className="mx-auto h-10 w-10 text-gray-400" />
+                        <div className="flex text-sm text-gray-600 justify-center mt-2">
+                          <label className="relative cursor-pointer bg-transparent rounded-md font-semibold text-emerald-600 hover:text-emerald-700">
+                            <span>อัปโหลดไฟล์ PDF หรือรูปภาพ</span>
+                            <input
+                              type="file"
+                              accept=".pdf,image/*"
+                              onChange={(e) => setAddSubjectFile(e.target.files?.[0] || null)}
+                              className="sr-only"
+                              required
+                            />
+                          </label>
+                        </div>
+                        {addSubjectFile && (
+                          <p className="text-sm font-semibold text-emerald-600 mt-2">
+                            📄 {addSubjectFile.name}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddSubjectModalOpen(false)}
+                  className="px-6 py-2.5 rounded-full text-sm font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  form="add-subject-form"
+                  disabled={isSubmittingAdditional}
+                  className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md transition-all disabled:opacity-50"
+                >
+                  {isSubmittingAdditional ? "กำลังบันทึก..." : "ส่งคำขอเพิ่มวิชา"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     );
   }
 
+  // --- ฟอร์มสมัครติวเตอร์ครั้งแรก ---
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-linear-to-br from-emerald-600 via-emerald-700 to-teal-900 py-12 px-4">
       <div className="absolute inset-0 pointer-events-none">
@@ -1167,7 +1532,7 @@ setRecentBookings(formattedBookings);
                             newSubjects[index] = {
                               ...newSubjects[index],
                               searchText: val,
-                              subject_id: "", 
+                              subject_id: "",
                               isOpen: true,
                             };
                             setSelectedSubjects(newSubjects);
@@ -1201,7 +1566,7 @@ setRecentBookings(formattedBookings);
                                 type="button"
                                 key={ms.id}
                                 onMouseDown={(e) => {
-                                  e.preventDefault(); 
+                                  e.preventDefault();
                                   handleSelectSubject(index, ms);
                                 }}
                                 className={`w-full text-left px-3.5 py-2.5 text-sm hover:bg-emerald-50 transition-colors flex items-center gap-2.5 ${

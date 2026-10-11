@@ -140,11 +140,11 @@ export default function Navbar() {
               </Link>
 
               <div className="flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-4 border-l border-gray-200">
-                {/* คลิกที่รูปโปรไฟล์หรือชื่อ เพื่อไปหน้าแก้ไขโปรไฟล์ (/profile/edit) */}
+                {/* คลิกที่รูปโปรไฟล์หรือชื่อ เพื่อไปหน้า Profile หลัก */}
                 <Link
-                  href="/profile/edit"
+                  href={`/profile/${userProfile.id}`}
                   className="flex items-center gap-2 py-1.5 px-2.5 rounded-full hover:bg-emerald-50/70 transition-all group"
-                  title="แก้ไขโปรไฟล์และรูปภาพ"
+                  title="ดูโปรไฟล์ของฉัน"
                 >
                   {userProfile.profile_image_url ? (
                     <Image
