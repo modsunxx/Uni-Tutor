@@ -67,7 +67,10 @@ export default function EditCoursePage() {
   // ข้อมูลเนื้อหาบทเรียนและเอกสารประกอบ (course_contents)
   const [contents, setContents] = useState<CourseContentItem[]>([]);
   const [contentTitle, setContentTitle] = useState("");
-  const [contentType, setContentType] = useState("pdf");
+  
+  // *** แก้ไขเป็น document เพื่อให้ตรงกับ ENUM ในฐานข้อมูล ***
+  const [contentType, setContentType] = useState("document"); 
+  
   const [contentSortOrder, setContentSortOrder] = useState("1");
   const [contentIsPreview, setContentIsPreview] = useState(false);
   const [contentSourceMode, setContentSourceMode] = useState<"upload" | "link">(
@@ -713,7 +716,8 @@ export default function EditCoursePage() {
                   onChange={(e) => setContentType(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="pdf">เอกสาร / PDF (pdf)</option>
+                  {/* *** แก้ไข value ตรงนี้ให้เป็น document ด้วย *** */}
+                  <option value="document">เอกสาร / PDF (pdf)</option>
                   <option value="video">วิดีโอ (video)</option>
                 </select>
               </div>
@@ -827,7 +831,8 @@ export default function EditCoursePage() {
                             บทที่ {item.sort_order ?? idx + 1}
                           </span>
                           <span className="text-[11px] font-semibold bg-gray-200/80 text-gray-700 px-2 py-0.5 rounded-md uppercase">
-                            {item.type || "pdf"}
+                            {/* ปรับให้แสดงผลเป็น PDF ถ้าค่า type คือ document เพื่อให้ดูเข้าใจง่ายสำหรับผู้ใช้งาน */}
+                            {item.type === "document" ? "PDF" : item.type || "pdf"}
                           </span>
                           {item.is_preview && (
                             <span className="text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
