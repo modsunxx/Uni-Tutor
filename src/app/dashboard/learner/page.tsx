@@ -67,7 +67,7 @@ type BookingItem = {
     profile_image_url: string | null;
   } | null;
   payment?: PaymentRecord | null;
-  review?: ReviewRecord | null; // เพิ่มฟิลด์เก็บข้อมูลรีวิว
+  review?: ReviewRecord | null;
 };
 
 export default function LearnerDashboardPage() {
@@ -82,9 +82,7 @@ export default function LearnerDashboardPage() {
 
   const [selectedFiles, setSelectedFiles] = useState<Record<number, File>>({});
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
-  const [uploadingBookingId, setUploadingBookingId] = useState<number | null>(
-    null,
-  );
+  const [uploadingBookingId, setUploadingBookingId] = useState<number | null>(null);
   const [uploadSuccessId, setUploadSuccessId] = useState<number | null>(null);
 
   // States สำหรับกล่อง Review Modal
@@ -158,28 +156,20 @@ export default function LearnerDashboardPage() {
           ] = await Promise.all([
             supabase
               .from("users")
-              .select(
-                "id, prefix, first_name, last_name, nickname, phone, line_id, profile_image_url",
-              )
+              .select("id, prefix, first_name, last_name, nickname, phone, line_id, profile_image_url")
               .in("id", tutorIds),
             supabase.from("payments").select("*").in("booking_id", bookingIds),
             supabase
               .from("reviews")
               .select("id, booking_id, rating, comment")
-              .in("booking_id", bookingIds), // ดึงข้อมูลรีวิวของทุกการจอง
+              .in("booking_id", bookingIds),
           ]);
 
           const enrichedBookings: BookingItem[] = bookingsData.map((b) => {
             const matchedTutor = tutorsData?.find((t) => t.id === b.tutor_id);
-            const matchedPayment = paymentsData?.find(
-              (p) => Number(p.booking_id) === Number(b.id),
-            );
-            const matchedReview = reviewsData?.find(
-              (r) => Number(r.booking_id) === Number(b.id),
-            );
-            const courseObj = Array.isArray(b.courses)
-              ? b.courses[0]
-              : b.courses;
+            const matchedPayment = paymentsData?.find((p) => Number(p.booking_id) === Number(b.id));
+            const matchedReview = reviewsData?.find((r) => Number(r.booking_id) === Number(b.id));
+            const courseObj = Array.isArray(b.courses) ? b.courses[0] : b.courses;
 
             return {
               ...b,
@@ -197,9 +187,7 @@ export default function LearnerDashboardPage() {
       } catch (err) {
         console.error("Error fetching learner bookings:", err);
         const errObj = err as { message?: string };
-        setErrorMsg(
-          `ไม่สามารถโหลดข้อมูลการจองได้: ${errObj?.message || "กรุณาลองใหม่อีกครั้ง"}`,
-        );
+        setErrorMsg(`ไม่สามารถโหลดข้อมูลการจองได้: ${errObj?.message || "กรุณาลองใหม่อีกครั้ง"}`);
       } finally {
         setIsLoading(false);
       }
@@ -208,10 +196,7 @@ export default function LearnerDashboardPage() {
     fetchLearnerDashboard();
   }, [supabase, router]);
 
-  const handleFileChange = (
-    bookingId: number,
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleFileChange = (bookingId: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFiles((prev) => ({ ...prev, [bookingId]: file }));
@@ -261,9 +246,7 @@ export default function LearnerDashboardPage() {
 
         setBookings((prev) =>
           prev.map((item) =>
-            item.id === booking.id
-              ? { ...item, payment: updatedPayment as PaymentRecord }
-              : item,
+            item.id === booking.id ? { ...item, payment: updatedPayment as PaymentRecord } : item,
           ),
         );
       } else {
@@ -281,9 +264,7 @@ export default function LearnerDashboardPage() {
 
         setBookings((prev) =>
           prev.map((item) =>
-            item.id === booking.id
-              ? { ...item, payment: newPayment as PaymentRecord }
-              : item,
+            item.id === booking.id ? { ...item, payment: newPayment as PaymentRecord } : item,
           ),
         );
       }
@@ -292,15 +273,12 @@ export default function LearnerDashboardPage() {
     } catch (err) {
       console.error("Error uploading slip:", err);
       const errObj = err as { message?: string };
-      alert(
-        `อัปโหลดสลิปไม่สำเร็จ: ${errObj?.message || "กรุณาตรวจสอบว่าสร้าง Bucket ชื่อ slips ใน Supabase แล้ว"}`,
-      );
+      alert(`อัปโหลดสลิปไม่สำเร็จ: ${errObj?.message || "กรุณาตรวจสอบว่าสร้าง Bucket ชื่อ slips ใน Supabase แล้ว"}`);
     } finally {
       setUploadingBookingId(null);
     }
   };
 
-  // เปิด Modal รีวิว
   const handleOpenReview = (booking: BookingItem) => {
     setReviewBooking(booking);
     setReviewRating(0);
@@ -308,7 +286,6 @@ export default function LearnerDashboardPage() {
     setReviewModalOpen(true);
   };
 
-  // ส่งข้อมูลรีวิวขึ้น Supabase
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reviewBooking || reviewRating === 0) {
@@ -332,12 +309,9 @@ export default function LearnerDashboardPage() {
 
       if (error) throw error;
 
-      // อัปเดตสถานะในหน้าจอว่ารีวิวแล้ว
       setBookings((prev) =>
         prev.map((b) =>
-          b.id === reviewBooking.id
-            ? { ...b, review: newReview as ReviewRecord }
-            : b,
+          b.id === reviewBooking.id ? { ...b, review: newReview as ReviewRecord } : b,
         ),
       );
 
@@ -382,7 +356,7 @@ export default function LearnerDashboardPage() {
               สวัสดีคุณ {learnerName}! 👋
             </h1>
             <p className="text-emerald-50 mt-1 text-sm md:text-base font-light">
-              ตรวจสอบตารางเรียนที่จองไว้ และแนบสลิปชำระเงินผ่านแอดมินส่วนกลาง
+              ตรวจสอบตารางเรียนที่จองไว้ และแนบสลิปชำระเงิน (โอนตรงให้ติวเตอร์)
             </p>
           </div>
 
@@ -433,35 +407,16 @@ export default function LearnerDashboardPage() {
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-white p-6 rounded-4xl border border-emerald-200/80 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-md">
-                <Landmark className="w-7 h-7" />
-              </div>
-              <div>
-                <span className="inline-block text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full mb-1">
-                  บัญชีกลางสำหรับชำระค่าเรียน (UniTutor Admin)
-                </span>
-                <h3 className="text-base sm:text-lg font-bold text-gray-900">
-                  ธ.กสิกรไทย (KBANK) • เลขบัญชี{" "}
-                  <span className="text-emerald-700 select-all font-mono">
-                    123-4-56789-0
-                  </span>
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  หรือพร้อมเพย์ (PromptPay):{" "}
-                  <span className="font-bold text-gray-800 select-all">
-                    089-999-9999
-                  </span>{" "}
-                  (ชื่อบัญชี: บจก. ยูนิติวเตอร์ แอดมิน)
-                </p>
-              </div>
-            </div>
-            <div className="text-xs text-gray-400 bg-gray-50 px-3.5 py-2.5 rounded-2xl border border-gray-100 shrink-0">
-              โอนยอดตามรายการจอง
-              <br />
-              แล้วแนบสลิปด้านล่างได้เลย
-            </div>
+          {/* กล่องคำแนะนำการชำระเงิน แทนที่บัญชีแอดมินเดิม */}
+          <div className="lg:col-span-2 bg-emerald-50 p-6 rounded-4xl border border-emerald-100 shadow-sm flex flex-col justify-center">
+            <h3 className="text-sm font-bold text-emerald-800 flex items-center gap-2 mb-2">
+              <Landmark className="w-4 h-4" />
+              การชำระเงิน (จ่ายตรงให้ติวเตอร์)
+            </h3>
+            <p className="text-xs sm:text-sm text-emerald-700 leading-relaxed">
+              ผู้เรียนสามารถโอนค่าเรียนเข้าบัญชีของ <b>ติวเตอร์โดยตรง</b> (สามารถสอบถามเลขบัญชีได้ผ่าน Line หรือเบอร์โทรศัพท์ของติวเตอร์) 
+              หลังจากโอนเงินเรียบร้อยแล้ว กรุณา <b>แนบรูปสลิป</b> ในรายการจองด้านล่าง เพื่อรอให้แอดมินยืนยันความถูกต้องครับ
+            </p>
           </div>
         </div>
 
@@ -485,7 +440,7 @@ export default function LearnerDashboardPage() {
                 const start = new Date(booking.start_at);
                 const end = new Date(booking.end_at);
                 const now = new Date();
-                const isFinished = now >= end; // ตรวจสอบว่าถึงเวลาเรียนเสร็จแล้วหรือยัง
+                const isFinished = now >= end; 
 
                 const dateStr = start.toLocaleDateString("th-TH", {
                   weekday: "long",
@@ -506,8 +461,7 @@ export default function LearnerDashboardPage() {
                   : "ติวเตอร์";
 
                 const hasSlip = Boolean(booking.payment?.slip_url);
-                const previewImg =
-                  previewUrls[booking.id] || booking.payment?.slip_url || null;
+                const previewImg = previewUrls[booking.id] || booking.payment?.slip_url || null;
                 const hasReviewed = Boolean(booking.review);
 
                 return (
@@ -542,7 +496,7 @@ export default function LearnerDashboardPage() {
                               ) : (
                                 <>
                                   <Clock className="w-3.5 h-3.5 text-amber-600" />
-                                  รอแนบสลิปโอนเงินให้แอดมิน
+                                  รอแนบสลิปโอนเงิน
                                 </>
                               )}
                             </span>
@@ -722,7 +676,7 @@ export default function LearnerDashboardPage() {
 
                           {uploadSuccessId === booking.id && (
                             <div className="text-xs font-semibold text-emerald-700 bg-emerald-100/80 px-3 py-2 rounded-xl text-center">
-                              ✓ ส่งสลิปโอนเงินให้แอดมินเรียบร้อยแล้ว!
+                              ✓ แนบสลิปโอนเงินเรียบร้อยแล้ว รอแอดมินตรวจสอบ!
                             </div>
                           )}
 
